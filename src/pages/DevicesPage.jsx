@@ -31,7 +31,7 @@ const Heading = ({ icon, title, children }) => (
 );
 
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
-const DesktopDownloads = () => {
+export const DesktopDownloads = () => {
     const [published, setPublished] = useState(null);
     const own = desktopService.systems.find((entry) => entry.id === desktopService.thisSystem());
 
@@ -47,13 +47,13 @@ const DesktopDownloads = () => {
         <Container layout="flex-column" gap="xs" padding="none" width="100%">
             <ButtonGroup size="sm" justify="start" selectable={false}>
                 {desktopService.systems.map((entry) => (
-                    <Button key={entry.id} size="sm" color="primary" disabled={!ready(entry)} onClick={() => window.open(desktopService.address(entry.file), '_blank', 'noopener')}>
+                    <Button key={entry.id} size="sm" color="primary" height="auto" minHeight="2.4rem" disabled={!ready(entry)} onClick={() => window.open(desktopService.address(entry.file), '_blank', 'noopener')}>
                         <Container layout="flex-column" align="center" gap="none" padding="none">
                             <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
                                 <Icon name={entry.icon} size="xs" />
-                                <Typography size="sm" weight="semibold" color="inherit">{entry.label}</Typography>
+                                <Typography size="xs" weight="semibold" color="inherit" marginTop="none" marginBottom="none">{entry.label}</Typography>
                             </Container>
-                            <Typography size="xxs" color="inherit">
+                            <Typography size="xxs" color="inherit" marginTop="none" marginBottom="none">
                                 {!ready(entry) ? 'Not available yet' : published?.version ? `Version ${published.version}` : 'Download'}
                             </Typography>
                         </Container>
