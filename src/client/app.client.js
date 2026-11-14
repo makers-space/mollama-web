@@ -190,7 +190,9 @@ api.interceptors.response.use(
             return api(originalRequest);
         }
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // A refused sign-in is the answer itself, not an expired session to renew.
+        const signingIn = /[/]auth[/](login|signup|refresh-token)/.test(originalRequest?.url || '');
+        if (error.response?.status === 401 && !originalRequest._retry && !signingIn) {
             originalRequest._retry = true;
 
             try {

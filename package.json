@@ -5,6 +5,7 @@
   "description": "React web application with advanced theming system",
   "scripts": {
     "dev": "vite",
+    "staging": "vite --mode staging",
     "build": "vite build",
     "preview": "vite preview"
   },
