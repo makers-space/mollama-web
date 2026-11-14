@@ -33,7 +33,7 @@ const Heading = ({ icon, title, children }) => (
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
 const DesktopDownloads = () => {
     const [published, setPublished] = useState(null);
-    const [chosen, setChosen] = useState(desktopService.thisSystem);
+    const own = desktopService.systems.find((entry) => entry.id === desktopService.thisSystem());
 
     useEffect(() => {
         let live = true;
@@ -41,30 +41,26 @@ const DesktopDownloads = () => {
         return () => { live = false; };
     }, []);
 
-    const system = desktopService.systems.find((entry) => entry.id === chosen);
-    const ready = published === null || published.files.includes(system.file);
+    const ready = (entry) => published === null || published.files.includes(entry.file);
 
     return (
         <Container layout="flex-column" gap="xs" padding="none" width="100%">
-            <ButtonGroup size="sm" justify="start" wrap={false}>
+            <ButtonGroup size="sm" justify="start" selectable={false}>
                 {desktopService.systems.map((entry) => (
-                    <Button key={entry.id} size="sm" selected={entry.id === chosen} onClick={() => setChosen(entry.id)}>
-                        <Icon name={entry.icon} size="xs" /> {entry.label}
+                    <Button key={entry.id} size="sm" color="primary" disabled={!ready(entry)} onClick={() => window.open(desktopService.address(entry.file), '_blank', 'noopener')}>
+                        <Container layout="flex-column" align="center" gap="none" padding="none">
+                            <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                                <Icon name={entry.icon} size="xs" />
+                                <Typography size="sm" weight="semibold" color="inherit">{entry.label}</Typography>
+                            </Container>
+                            <Typography size="xxs" color="inherit">
+                                {!ready(entry) ? 'Not available yet' : published?.version ? `Version ${published.version}` : 'Download'}
+                            </Typography>
+                        </Container>
                     </Button>
                 ))}
             </ButtonGroup>
-            <Button size="sm" color="primary" disabled={!ready} onClick={() => window.open(desktopService.address(system.file), '_blank', 'noopener')}>
-                <Container layout="flex-column" align="center" gap="none" padding="none">
-                    <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
-                        <Icon name="FiDownload" size="xs" />
-                        <Typography size="sm" weight="semibold" color="inherit">{ready ? `Download for ${system.label}` : `Not available for ${system.label} yet`}</Typography>
-                    </Container>
-                    {ready && published?.version && <Typography size="xxs" color="inherit">Version {published.version}</Typography>}
-                </Container>
-            </Button>
-            <Typography size="xxs" color="muted">
-                {ready ? system.note : `The ${system.label} version has not been published yet.`}
-            </Typography>
+            <Typography size="xxs" color="muted">{own.note}</Typography>
         </Container>
     );
 };
