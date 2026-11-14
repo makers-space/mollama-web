@@ -3,7 +3,7 @@ import { Page, Container, Card, Typography, Button, Badge, Icon, Input } from '@
 import { useNotification } from '@contexts/NotificationContext';
 import { deviceService, describeError, formatGb, useGuide } from '../client/ai.client';
 
-const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || '';
+const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || 'https://github.com/makers-space/mollama-desktop/releases/latest/download/Mollama-Setup.exe';
 const ADD_STEPS = [
     'Download the Mollama desktop app on the computer you want to add.',
     'Install it, open it and sign in with this account.',
@@ -280,9 +280,10 @@ const DevicesPage = () => {
                                 </Container>
                             ))}
                         </Container>
-                        {DESKTOP_DOWNLOAD_URL
-                            ? <Button size="sm" color="primary" onClick={() => window.open(DESKTOP_DOWNLOAD_URL, '_blank', 'noopener')}>Download the desktop app</Button>
-                            : <Typography size="xxs" color="muted">The download is not published yet. It will be offered here when it is.</Typography>}
+                        <Button size="sm" color="primary" onClick={() => window.open(DESKTOP_DOWNLOAD_URL, '_blank', 'noopener')}>Download for Windows</Button>
+                        <Typography size="xxs" color="muted">
+                            Windows shows a warning before opening the installer, because it is not signed yet: choose More info, then Run anyway. Versions for macOS and Linux are not available yet.
+                        </Typography>
                     </Card>
                 </Container>
             </Container>
