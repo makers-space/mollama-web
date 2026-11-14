@@ -184,20 +184,21 @@ export const deviceService = {
 // The desktop app's installers are published as releases of a public repository; this reads which ones exist.
 const INSTALLERS = 'makers-space/mollama-installers';
 export const desktopService = {
+    // On the staging site the buttons offer the staging build of the app, which opens staging.
     systems: [
-        { id: 'windows', label: 'Windows', icon: 'FaWindows', file: 'Mollama-Setup.exe' },
-        { id: 'mac', label: 'macOS', icon: 'FaApple', file: 'Mollama.dmg' },
-        { id: 'linux', label: 'Linux', icon: 'FaLinux', file: 'Mollama.AppImage' }
-    ],
+        { id: 'windows', label: 'Windows', icon: 'FaWindows', ending: '-Setup.exe' },
+        { id: 'mac', label: 'macOS', icon: 'FaApple', ending: '.dmg' },
+        { id: 'linux', label: 'Linux', icon: 'FaLinux', ending: '.AppImage' }
+    ].map((system) => ({ ...system, file: `${window.location.hostname.startsWith('staging.') ? 'Mollama-Staging' : 'Mollama'}${system.ending}` })),
     address: (file) => `https://github.com/${INSTALLERS}/releases/latest/download/${file}`,
     async published() {
         try {
             const reply = await fetch(`https://api.github.com/repos/${INSTALLERS}/releases/latest`);
-            if (!reply.ok) return { version: null, files: ['Mollama-Setup.exe'] };
+            if (!reply.ok) return { version: null, files: ['Mollama-Setup.exe', 'Mollama-Staging-Setup.exe'] };
             const release = await reply.json();
             return { version: String(release.tag_name || '').replace(/^v/, '') || null, files: (release.assets || []).map((asset) => asset.name) };
         } catch {
-            return { version: null, files: ['Mollama-Setup.exe'] };
+            return { version: null, files: ['Mollama-Setup.exe', 'Mollama-Staging-Setup.exe'] };
         }
     }
 };
