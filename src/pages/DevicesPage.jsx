@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Page, Container, Card, Typography, Button, Badge, Icon, Input } from '@components/Components';
+import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { deviceService, describeError, formatGb, useGuide } from '../client/ai.client';
+import { deviceService, desktopService, describeError, formatGb, useGuide } from '../client/ai.client';
 
-const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || 'https://github.com/makers-space/mollama-installers/releases/latest/download/Mollama-Setup.exe';
 const ADD_STEPS = [
     'Download the Mollama desktop app on the computer you want to add.',
     'Install it, open it and sign in with this account.',
@@ -32,6 +31,38 @@ const Heading = ({ icon, title, children }) => (
 );
 
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
+const DesktopDownloads = () => {
+    const [published, setPublished] = useState(null);
+    const [chosen, setChosen] = useState(desktopService.thisSystem);
+
+    useEffect(() => {
+        let live = true;
+        desktopService.published().then((files) => { if (live) setPublished(files); });
+        return () => { live = false; };
+    }, []);
+
+    const system = desktopService.systems.find((entry) => entry.id === chosen);
+    const ready = published === null || published.includes(system.file);
+
+    return (
+        <Container layout="flex-column" gap="xs" padding="none" width="100%">
+            <ButtonGroup size="sm" justify="start" wrap={false}>
+                {desktopService.systems.map((entry) => (
+                    <Button key={entry.id} size="sm" selected={entry.id === chosen} onClick={() => setChosen(entry.id)}>
+                        <Icon name={entry.icon} size="xs" /> {entry.label}
+                    </Button>
+                ))}
+            </ButtonGroup>
+            <Button size="sm" color="primary" disabled={!ready} onClick={() => window.open(desktopService.address(system.file), '_blank', 'noopener')}>
+                <Icon name="FiDownload" size="xs" /> {ready ? `Download for ${system.label}` : `Not available for ${system.label} yet`}
+            </Button>
+            <Typography size="xxs" color="muted">
+                {ready ? system.note : `The ${system.label} version has not been published yet.`}
+            </Typography>
+        </Container>
+    );
+};
+
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
 const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) => {
@@ -280,10 +311,7 @@ const DevicesPage = () => {
                                 </Container>
                             ))}
                         </Container>
-                        <Button size="sm" color="primary" onClick={() => window.open(DESKTOP_DOWNLOAD_URL, '_blank', 'noopener')}>Download for Windows</Button>
-                        <Typography size="xxs" color="muted">
-                            Windows shows a warning before opening the installer, because it is not signed yet: choose More info, then Run anyway. Versions for macOS and Linux are not available yet.
-                        </Typography>
+                        <DesktopDownloads />
                     </Card>
                 </Container>
             </Container>
