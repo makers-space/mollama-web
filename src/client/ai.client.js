@@ -55,12 +55,17 @@ export const ActivityProvider = ({ children }) => {
         refresh();
         const stopListening = appService.onNotification('activity:changed', refresh);
         const stopDownloads = appService.onNotification('download:finished', () => window.dispatchEvent(new CustomEvent('ollama-availability-changed')));
+        const stopDevices = appService.onNotification('device:changed', () => {
+            window.dispatchEvent(new CustomEvent('ollama-status-changed'));
+            window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
+        });
         const timer = setInterval(() => {
             if (!document.hidden) refresh();
         }, 60000);
         return () => {
             stopListening();
             stopDownloads();
+            stopDevices();
             clearInterval(timer);
         };
     }, [userId, refresh]);
@@ -138,8 +143,34 @@ export const GuideProvider = ({ children }) => {
     return createElement(GuideContext.Provider, { value: { ...guide, setOn, tip } }, children);
 };
 
+// The device the person chose to work on travels with every request; with none chosen the server picks.
+const DEVICE_KEY = 'mollama-device';
+const chosenDevice = () => {
+    try {
+        return localStorage.getItem(DEVICE_KEY) || '';
+    } catch {
+        return '';
+    }
+};
+const deviceHeader = () => (chosenDevice() ? { 'X-Mollama-Device': chosenDevice() } : {});
+api.interceptors.request.use((config) => {
+    Object.assign(config.headers, deviceHeader());
+    return config;
+});
+
 export const deviceService = {
     listDevices: () => api.get('/devices'),
+    linkDevice: (details) => api.post('/devices/link', details),
+    removeDevice: (id) => api.delete(`/devices/${id}`),
+    chosen: chosenDevice,
+    choose(id) {
+        try {
+            if (id) localStorage.setItem(DEVICE_KEY, id);
+            else localStorage.removeItem(DEVICE_KEY);
+        } catch { /* storage unavailable: the server picks */ }
+        window.dispatchEvent(new CustomEvent('ollama-status-changed'));
+        window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
+    },
     updateDevice: (id, changes) => api.put(`/devices/${id}`, changes),
     detectDevice: (id) => api.post(`/devices/${id}/detect`, {}),
 
@@ -148,6 +179,39 @@ export const deviceService = {
     testConnection: (ollamaBaseUrl) => api.post('/settings/test-connection', { ollamaBaseUrl }),
 
     getSetupStatus: () => api.get('/setup/status')
+};
+
+// Inside the desktop app, signing in links this computer to the account and signing out unlinks it.
+export const useDeviceLink = () => {
+    const { user } = useAuth();
+    const userId = user?.id || user?._id || null;
+
+    useEffect(() => {
+        const desktop = window.desktop;
+        if (!desktop?.link) return undefined;
+        let cancelled = false;
+        (async () => {
+            try {
+                const state = await desktop.deviceState();
+                if (!userId) {
+                    if (state?.deviceId && state.user && sessionStorage.getItem('mollama-signed-in')) await desktop.unlink();
+                    sessionStorage.removeItem('mollama-signed-in');
+                    return;
+                }
+                sessionStorage.setItem('mollama-signed-in', '1');
+                const { devices } = await api.get('/devices');
+                if (state?.deviceId && state.user === String(userId) && devices.some((device) => device.id === state.deviceId)) return;
+                const hardware = await desktop.hardware();
+                const linked = await api.post('/devices/link', { hostname: hardware.hostname, hardware });
+                if (cancelled) return;
+                const socketUrl = `${import.meta.env.VITE_WS_BASE_URL || API_BASE_URL.replace(/^http/, 'ws').replace(/[/]api[/]v1[/]?$/, '')}/devices`;
+                await desktop.link({ deviceId: linked.device.id, key: linked.key, user: String(userId), socketUrl });
+            } catch {
+                return;
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [userId]);
 };
 
 export const describeError = (error, fallback = 'Something went wrong. Please try again.') => {
@@ -174,7 +238,7 @@ export const modelService = {
     cancelDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'cancel' }),
 
     watchDownloads({ onSnapshot, onProgress, onError }) {
-        const source = new EventSource(`${API_BASE_URL}/models/downloads/stream`, { withCredentials: true });
+        const source = new EventSource(`${API_BASE_URL}/models/downloads/stream${chosenDevice() ? `?device=${chosenDevice()}` : ''}`, { withCredentials: true });
         source.addEventListener('snapshot', (event) => onSnapshot(JSON.parse(event.data)));
         source.addEventListener('progress', (event) => onProgress(JSON.parse(event.data)));
         source.onerror = () => onError?.();
@@ -251,7 +315,7 @@ export const chatService = {
     stop: (id) => api.post(`/chats/${id}/stop`, {}),
 
     async rejoin(id, { onEvent, signal }) {
-        const response = await fetch(`${API_BASE_URL}/chats/${id}/reply`, { credentials: 'include', signal });
+        const response = await fetch(`${API_BASE_URL}/chats/${id}/reply`, { credentials: 'include', signal, headers: deviceHeader() });
         if (response.status !== 200) return false;
         await readEvents(response, onEvent);
         return true;
@@ -261,7 +325,7 @@ export const chatService = {
         const attempt = async () => fetch(`${API_BASE_URL}/chats/${id}/messages`, {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': await csrfToken() },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': await csrfToken(), ...deviceHeader() },
             body: JSON.stringify(body),
             signal
         });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@contexts/AuthContext';
 import { useNotification } from '@contexts/NotificationContext';
-import { deviceService } from '../client/ai.client';
+import { deviceService, useDeviceLink } from '../client/ai.client';
 
 const RECHECK_MS = 30000;
 const RECHECK_PROBLEM_MS = 5000;
@@ -10,6 +10,7 @@ export const OllamaWatcher = () => {
     const { user } = useAuth();
     const { warning, success } = useNotification();
     const [problem, setProblem] = useState(null);
+    useDeviceLink();
 
     const lastState = useRef(null);
 

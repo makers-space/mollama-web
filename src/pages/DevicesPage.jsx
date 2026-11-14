@@ -27,7 +27,7 @@ const Heading = ({ icon, title, children }) => (
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
-const DeviceCard = ({ device, canManage, onChanged }) => {
+const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) => {
     const { success, error: notifyError } = useNotification();
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -88,16 +88,22 @@ const DeviceCard = ({ device, canManage, onChanged }) => {
         <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false} span="full">
             <Heading icon="FiMonitor" title={device.name}>
                 <Container layout="flex" gap="xs" padding="none" align="center" justify="end">
+                    {current && <Badge size="xs" color="primary">In use</Badge>}
                     <Badge size="xs" color={device.online ? 'success' : 'default'}>{device.online ? 'Online' : 'Offline'}</Badge>
-                    <Badge size="xs" color={ollama.available ? 'success' : 'error'}>
-                        {ollama.available ? `Ollama ${ollama.version}` : 'Ollama is not running'}
-                    </Badge>
+                    {device.online && (
+                        <Badge size="xs" color={ollama.available ? 'success' : 'error'}>
+                            {ollama.available ? `Ollama ${ollama.version}` : 'Ollama is not running'}
+                        </Badge>
+                    )}
+                    {!current && device.online && <Button size="xs" color="primary" onClick={() => onUse(device)}>Use this device</Button>}
+                    {device.kind !== 'local' && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
                 </Container>
             </Heading>
             <Typography size="xxs" color="muted">
-                {device.kind === 'local' ? 'The computer Mollama is running on.' : 'Registered device.'}
-                {!ollama.available && ' Start Ollama on this computer, then read it again.'}
+                {device.kind === 'local' ? 'The computer Mollama is running on.' : 'Linked through the Mollama desktop app.'}
+                {!device.online && ' Open the Mollama desktop app on it to bring it online.'}
+                {device.online && !ollama.available && ' Start Ollama on this computer, then read it again.'}
             </Typography>
 
             {!editing && (
@@ -168,8 +174,9 @@ const DeviceCard = ({ device, canManage, onChanged }) => {
 };
 
 const DevicesPage = () => {
-    const { error: notifyError } = useNotification();
+    const { error: notifyError, success, confirm } = useNotification();
     const [devices, setDevices] = useState(null);
+    const [current, setCurrent] = useState(null);
     const [canManage, setCanManage] = useState(false);
     const [failed, setFailed] = useState(false);
     const browser = useMemo(() => readBrowserDevice(), []);
@@ -178,6 +185,7 @@ const DevicesPage = () => {
         try {
             const result = await deviceService.listDevices();
             setDevices(result.devices);
+            setCurrent(result.current || null);
             setCanManage(Boolean(result.permissions?.manage));
             setFailed(false);
         } catch (error) {
@@ -191,6 +199,24 @@ const DevicesPage = () => {
         window.addEventListener('ollama-availability-changed', load);
         return () => window.removeEventListener('ollama-availability-changed', load);
     }, [load]);
+
+    const chooseDevice = (device) => {
+        deviceService.choose(device.id);
+        success(`${device.name} is now the device Mollama works on.`);
+        load();
+    };
+
+    const removeDevice = async (device) => {
+        if (!(await confirm(`Remove ${device.name}? It stops being available until its desktop app signs in again.`))) return;
+        try {
+            await deviceService.removeDevice(device.id);
+            if (deviceService.chosen() === device.id) deviceService.choose('');
+            success(`${device.name} was removed.`);
+            load();
+        } catch (error) {
+            notifyError(describeError(error, 'The device could not be removed.'));
+        }
+    };
 
     const replaceDevice = (updated) => {
         setDevices((current) => current.map((device) => (device.id === updated.id ? updated : device)));
@@ -215,17 +241,29 @@ const DevicesPage = () => {
                 {devices === null && !failed && <Typography size="xs" color="muted">Reading this computer…</Typography>}
 
                 {failed && (
-                    <Card layout="flex" align="center" justify="between" gap="sm" padding="md" width="100%" hover={false}>
-                        <Typography size="sm" weight="semibold">Your devices could not be loaded.</Typography>
-                        <Button size="sm" onClick={load}>Try again</Button>
+                    <Card padding="md" width="100%" hover={false}>
+                        <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                            <Typography size="sm" weight="semibold">Your devices could not be loaded.</Typography>
+                            <Button size="sm" onClick={load}>Try again</Button>
+                        </Container>
+                    </Card>
+                )}
+
+                {devices?.length === 0 && (
+                    <Card layout="flex-column" gap="xs" padding="md" width="100%" hover={false}>
+                        <Typography size="sm" weight="semibold">No device is connected to your account yet.</Typography>
+                        <Typography size="xs" color="muted">
+                            Install the Mollama desktop app on a computer and sign in. That computer appears here by itself, and its models can then be used from any of your Mollama apps.
+                        </Typography>
                     </Card>
                 )}
 
                 <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
                     {devices?.map((device) => (
-                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} />
+                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} current={device.id === current} onUse={chooseDevice} onRemove={removeDevice} />
                     ))}
 
+                    {!window.desktop && (
                     <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" hover={false}>
                         <Heading icon="FiGlobe" title="What this browser can see" />
                         <Typography size="xxs" color="muted">
@@ -243,14 +281,15 @@ const DevicesPage = () => {
                             <Tile icon="FiCpu" label="Processor threads" value={browser.processorThreads || 'Not shared'} />
                         </Container>
                     </Card>
+                    )}
 
                     <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" hover={false} background="hex" backgroundFade="left">
                         <Heading icon="FiPlusCircle" title="Add another device">
-                            <Badge size="xs" color="tertiary">Coming later</Badge>
+                            <Badge size="xs" color="tertiary">Desktop app</Badge>
                         </Heading>
                         <Typography size="xs" color="muted">
-                            You will be able to register other computers by installing a small companion app on each one.
-                            While it is running, that computer's models can be used from here.
+                            Install the Mollama desktop app on another computer and sign in with this account. It is listed
+                            here by itself, and while the app is running that computer's models can be used from any of your Mollama apps.
                         </Typography>
                     </Card>
                 </Container>

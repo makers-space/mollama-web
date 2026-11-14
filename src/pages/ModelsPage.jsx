@@ -680,8 +680,9 @@ const ModelsPage = () => {
         (async () => {
             try {
                 const result = await deviceService.listDevices();
-                setDevice(result.devices[0]);
-                loadCatalogue(result.devices[0].id);
+                const chosen = result.devices.find((entry) => entry.id === result.current) || result.devices[0] || null;
+                setDevice(chosen);
+                if (chosen) loadCatalogue(chosen.id);
             } catch (error) {
                 notifyError(describeError(error, 'This device could not be read.'));
             }
