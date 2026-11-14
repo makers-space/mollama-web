@@ -184,12 +184,17 @@ export const deviceService = {
 // The desktop app's installers are published as releases of a public repository; this reads which ones exist.
 const INSTALLERS = 'makers-space/mollama-installers';
 export const desktopService = {
-    // On the staging site the buttons offer the staging build of the app, which opens staging.
     systems: [
         { id: 'windows', label: 'Windows', icon: 'FaWindows', ending: '-Setup.exe' },
         { id: 'mac', label: 'macOS', icon: 'FaApple', ending: '.dmg' },
         { id: 'linux', label: 'Linux', icon: 'FaLinux', ending: '.AppImage' }
-    ].map((system) => ({ ...system, file: `${window.location.hostname.startsWith('staging.') ? 'Mollama-Staging' : 'Mollama'}${system.ending}` })),
+    ],
+    // The staging site offers both builds, each under its own heading; everywhere else only the released app.
+    channels() {
+        const released = { id: 'production', name: 'Mollama', title: 'Mollama', opens: 'Opens www.mollama.one' };
+        const staging = { id: 'staging', name: 'Mollama-Staging', title: 'Mollama Staging', opens: 'Opens staging.mollama.one, for testing' };
+        return window.location.hostname.startsWith('staging.') ? [staging, released] : [released];
+    },
     address: (file) => `https://github.com/${INSTALLERS}/releases/latest/download/${file}`,
     async published() {
         try {

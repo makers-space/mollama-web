@@ -33,6 +33,7 @@ const Heading = ({ icon, title, children }) => (
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
 export const DesktopDownloads = () => {
     const [published, setPublished] = useState(null);
+    const channels = desktopService.channels();
 
     useEffect(() => {
         let live = true;
@@ -40,24 +41,39 @@ export const DesktopDownloads = () => {
         return () => { live = false; };
     }, []);
 
-    const ready = (entry) => published === null || published.files.includes(entry.file);
+    const ready = (file) => published === null || published.files.includes(file);
 
     return (
-            <ButtonGroup size="sm" justify="start" selectable={false}>
-                {desktopService.systems.map((entry) => (
-                    <Button key={entry.id} size="sm" color="primary" height="auto" disabled={!ready(entry)} onClick={() => window.open(desktopService.address(entry.file), '_blank', 'noopener')}>
-                        <Container layout="flex-column" align="center" gap="none" padding="none">
-                            <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
-                                <Icon name={entry.icon} size="xs" />
-                                <Typography size="xs" weight="semibold" color="inherit" margin="none">{entry.label}</Typography>
-                            </Container>
-                            <Typography size="xxs" color="inherit" margin="none">
-                                {!ready(entry) ? 'Not available yet' : published?.version ? `Version ${published.version}` : 'Download'}
-                            </Typography>
+        <Container layout="flex-column" gap="sm" padding="none" width="100%">
+            {channels.map((channel) => (
+                <Container key={channel.id} layout="flex-column" gap="xs" padding="none" width="100%">
+                    {channels.length > 1 && (
+                        <Container layout="flex" align="center" gap="xs" padding="none">
+                            <Typography size="xs" weight="semibold" margin="none">{channel.title}</Typography>
+                            <Badge size="xs" color={channel.id === 'staging' ? 'warning' : 'success'}>{channel.opens}</Badge>
                         </Container>
-                    </Button>
-                ))}
-            </ButtonGroup>
+                    )}
+                    <ButtonGroup size="sm" justify="start" selectable={false}>
+                        {desktopService.systems.map((system) => {
+                            const file = `${channel.name}${system.ending}`;
+                            return (
+                                <Button key={system.id} size="sm" color={channel.id === 'staging' ? 'secondary' : 'primary'} height="auto" disabled={!ready(file)} onClick={() => window.open(desktopService.address(file), '_blank', 'noopener')}>
+                                    <Container layout="flex-column" align="center" gap="none" padding="none">
+                                        <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                                            <Icon name={system.icon} size="xs" />
+                                            <Typography size="xs" weight="semibold" color="inherit" margin="none">{system.label}</Typography>
+                                        </Container>
+                                        <Typography size="xxs" color="inherit" margin="none">
+                                            {!ready(file) ? 'Not available yet' : published?.version ? `Version ${published.version}` : 'Download'}
+                                        </Typography>
+                                    </Container>
+                                </Button>
+                            );
+                        })}
+                    </ButtonGroup>
+                </Container>
+            ))}
+        </Container>
     );
 };
 
