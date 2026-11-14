@@ -33,7 +33,6 @@ const Heading = ({ icon, title, children }) => (
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
 export const DesktopDownloads = () => {
     const [published, setPublished] = useState(null);
-    const own = desktopService.systems.find((entry) => entry.id === desktopService.thisSystem());
 
     useEffect(() => {
         let live = true;
@@ -44,7 +43,6 @@ export const DesktopDownloads = () => {
     const ready = (entry) => published === null || published.files.includes(entry.file);
 
     return (
-        <Container layout="flex-column" gap="xs" padding="none" width="100%">
             <ButtonGroup size="sm" justify="start" selectable={false}>
                 {desktopService.systems.map((entry) => (
                     <Button key={entry.id} size="sm" color="primary" height="auto" disabled={!ready(entry)} onClick={() => window.open(desktopService.address(entry.file), '_blank', 'noopener')}>
@@ -60,8 +58,6 @@ export const DesktopDownloads = () => {
                     </Button>
                 ))}
             </ButtonGroup>
-            <Typography size="xxs" color="muted">{own.note}</Typography>
-        </Container>
     );
 };
 

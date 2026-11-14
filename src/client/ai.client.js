@@ -185,16 +185,10 @@ export const deviceService = {
 const INSTALLERS = 'makers-space/mollama-installers';
 export const desktopService = {
     systems: [
-        { id: 'windows', label: 'Windows', icon: 'FaWindows', file: 'Mollama-Setup.exe', note: 'Windows warns before opening the installer, because it is not signed yet: choose More info, then Run anyway.' },
-        { id: 'mac', label: 'macOS', icon: 'FaApple', file: 'Mollama.dmg', note: 'macOS blocks the app the first time, because it is not signed yet: right-click Mollama, choose Open, then Open again.' },
-        { id: 'linux', label: 'Linux', icon: 'FaLinux', file: 'Mollama.AppImage', note: 'Allow the downloaded file to run as a program, then open it.' }
+        { id: 'windows', label: 'Windows', icon: 'FaWindows', file: 'Mollama-Setup.exe' },
+        { id: 'mac', label: 'macOS', icon: 'FaApple', file: 'Mollama.dmg' },
+        { id: 'linux', label: 'Linux', icon: 'FaLinux', file: 'Mollama.AppImage' }
     ],
-    thisSystem() {
-        const seen = `${navigator.userAgentData?.platform || navigator.platform || ''} ${navigator.userAgent}`.toLowerCase();
-        if (seen.includes('mac')) return 'mac';
-        if (seen.includes('linux') && !seen.includes('android')) return 'linux';
-        return 'windows';
-    },
     address: (file) => `https://github.com/${INSTALLERS}/releases/latest/download/${file}`,
     async published() {
         try {
