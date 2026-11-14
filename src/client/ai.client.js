@@ -199,10 +199,11 @@ export const desktopService = {
     async published() {
         try {
             const reply = await fetch(`https://api.github.com/repos/${INSTALLERS}/releases/latest`);
-            if (!reply.ok) return ['Mollama-Setup.exe'];
-            return ((await reply.json()).assets || []).map((asset) => asset.name);
+            if (!reply.ok) return { version: null, files: ['Mollama-Setup.exe'] };
+            const release = await reply.json();
+            return { version: String(release.tag_name || '').replace(/^v/, '') || null, files: (release.assets || []).map((asset) => asset.name) };
         } catch {
-            return ['Mollama-Setup.exe'];
+            return { version: null, files: ['Mollama-Setup.exe'] };
         }
     }
 };

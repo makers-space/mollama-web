@@ -37,12 +37,12 @@ const DesktopDownloads = () => {
 
     useEffect(() => {
         let live = true;
-        desktopService.published().then((files) => { if (live) setPublished(files); });
+        desktopService.published().then((release) => { if (live) setPublished(release); });
         return () => { live = false; };
     }, []);
 
     const system = desktopService.systems.find((entry) => entry.id === chosen);
-    const ready = published === null || published.includes(system.file);
+    const ready = published === null || published.files.includes(system.file);
 
     return (
         <Container layout="flex-column" gap="xs" padding="none" width="100%">
@@ -54,7 +54,13 @@ const DesktopDownloads = () => {
                 ))}
             </ButtonGroup>
             <Button size="sm" color="primary" disabled={!ready} onClick={() => window.open(desktopService.address(system.file), '_blank', 'noopener')}>
-                <Icon name="FiDownload" size="xs" /> {ready ? `Download for ${system.label}` : `Not available for ${system.label} yet`}
+                <Container layout="flex-column" align="center" gap="none" padding="none">
+                    <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                        <Icon name="FiDownload" size="xs" />
+                        <Typography size="sm" weight="semibold" color="inherit">{ready ? `Download for ${system.label}` : `Not available for ${system.label} yet`}</Typography>
+                    </Container>
+                    {ready && published?.version && <Typography size="xxs" color="inherit">Version {published.version}</Typography>}
+                </Container>
             </Button>
             <Typography size="xxs" color="muted">
                 {ready ? system.note : `The ${system.label} version has not been published yet.`}
