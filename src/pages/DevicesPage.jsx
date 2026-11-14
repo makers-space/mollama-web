@@ -3,7 +3,7 @@ import { Page, Container, Card, Typography, Button, Badge, Icon, Input } from '@
 import { useNotification } from '@contexts/NotificationContext';
 import { deviceService, describeError, formatGb, useGuide } from '../client/ai.client';
 
-const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || 'https://github.com/makers-space/mollama-desktop/releases/latest/download/Mollama-Setup.exe';
+const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || 'https://github.com/makers-space/mollama-installers/releases/latest/download/Mollama-Setup.exe';
 const ADD_STEPS = [
     'Download the Mollama desktop app on the computer you want to add.',
     'Install it, open it and sign in with this account.',
