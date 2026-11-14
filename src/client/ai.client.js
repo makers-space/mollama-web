@@ -210,12 +210,12 @@ export const desktopService = {
 
 // Inside the desktop app, signing in links this computer to the account and signing out unlinks it.
 export const useDeviceLink = () => {
-    const { user } = useAuth();
+    const { user, isLoading } = useAuth();
     const userId = user?.id || user?._id || null;
 
     useEffect(() => {
         const desktop = window.desktop;
-        if (!desktop?.link) return undefined;
+        if (!desktop?.link || isLoading) return undefined;
         let cancelled = false;
         (async () => {
             try {
@@ -238,7 +238,7 @@ export const useDeviceLink = () => {
             }
         })();
         return () => { cancelled = true; };
-    }, [userId]);
+    }, [userId, isLoading]);
 };
 
 export const describeError = (error, fallback = 'Something went wrong. Please try again.') => {
