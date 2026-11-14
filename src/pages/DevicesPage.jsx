@@ -1,7 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Page, Container, Card, Typography, Button, Badge, Icon, Input } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { deviceService, describeError, readBrowserDevice, formatGb, useGuide } from '../client/ai.client';
+import { deviceService, describeError, formatGb, useGuide } from '../client/ai.client';
+
+const DESKTOP_DOWNLOAD_URL = import.meta.env.VITE_DESKTOP_DOWNLOAD_URL || '';
+const ADD_STEPS = [
+    'Download the Mollama desktop app on the computer you want to add.',
+    'Install it, open it and sign in with this account.',
+    'The computer appears on this page by itself, and its models can be used from any of your Mollama apps.'
+];
 
 const Tile = ({ icon, label, value, note }) => (
     <Card layout="flex" align="center" gap="sm" padding="sm" hover={false} shadow={false} wrap={false} width="100%" minWidth="0">
@@ -179,7 +186,6 @@ const DevicesPage = () => {
     const [current, setCurrent] = useState(null);
     const [canManage, setCanManage] = useState(false);
     const [failed, setFailed] = useState(false);
-    const browser = useMemo(() => readBrowserDevice(), []);
 
     const load = useCallback(async () => {
         try {
@@ -263,34 +269,20 @@ const DevicesPage = () => {
                         <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} current={device.id === current} onUse={chooseDevice} onRemove={removeDevice} />
                     ))}
 
-                    {!window.desktop && (
-                    <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" hover={false}>
-                        <Heading icon="FiGlobe" title="What this browser can see" />
-                        <Typography size="xxs" color="muted">
-                            A web page only gets a rough picture of the device it is opened on. These figures are
-                            approximate, and a page cannot download or run models by itself.
-                        </Typography>
-                        <Container layout="grid" columns="auto-sm" gap="sm" padding="none" width="100%">
-                            <Tile icon="FiZap" label="Graphics card" value={browser.graphicsName || 'Not shared'} />
-                            <Tile
-                                icon="FiLayers"
-                                label="System memory"
-                                value={browser.memoryGb ? `About ${browser.memoryGb} GB` : 'Not shared'}
-                                note={browser.memoryGb ? 'Browsers round this down' : null}
-                            />
-                            <Tile icon="FiCpu" label="Processor threads" value={browser.processorThreads || 'Not shared'} />
-                        </Container>
-                    </Card>
-                    )}
 
                     <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" hover={false} background="hex" backgroundFade="left">
-                        <Heading icon="FiPlusCircle" title="Add another device">
-                            <Badge size="xs" color="tertiary">Desktop app</Badge>
-                        </Heading>
-                        <Typography size="xs" color="muted">
-                            Install the Mollama desktop app on another computer and sign in with this account. It is listed
-                            here by itself, and while the app is running that computer's models can be used from any of your Mollama apps.
-                        </Typography>
+                        <Heading icon="FiPlusCircle" title={devices?.length ? 'Add another device' : 'Add a device'} />
+                        <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                            {ADD_STEPS.map((step, index) => (
+                                <Container key={step} layout="flex" align="start" gap="xs" padding="none" wrap={false}>
+                                    <Badge size="xs" color="primary">{index + 1}</Badge>
+                                    <Typography size="xs" color="muted">{step}</Typography>
+                                </Container>
+                            ))}
+                        </Container>
+                        {DESKTOP_DOWNLOAD_URL
+                            ? <Button size="sm" color="primary" onClick={() => window.open(DESKTOP_DOWNLOAD_URL, '_blank', 'noopener')}>Download the desktop app</Button>
+                            : <Typography size="xxs" color="muted">The download is not published yet. It will be offered here when it is.</Typography>}
                     </Card>
                 </Container>
             </Container>
