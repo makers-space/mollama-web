@@ -5,7 +5,7 @@ import { AuthProvider } from '@contexts/AuthContext';
 import { NotificationProvider } from '@contexts/NotificationContext';
 
 // Import all pages
-import HomePage from './pages/HomePage';
+import HomePage, { DesktopHome } from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -14,7 +14,7 @@ import DevicesPage from './pages/DevicesPage';
 import SettingsPage from './pages/SettingsPage';
 import ModelsPage from './pages/ModelsPage';
 import ChatPage from './pages/ChatPage';
-import { OllamaBanner } from './components/OllamaBanner';
+import { OllamaWatcher } from './components/OllamaWatcher';
 import { GuideProvider, ActivityProvider } from './client/ai.client';
 import DashboardPage from './pages/DashboardPage';
 
@@ -26,7 +26,7 @@ import AppNotifications from '@components/AppNotifications';
 function AppRouter() {
   return (
     <>
-      <OllamaBanner />
+      <OllamaWatcher />
       <Routes>
         {/* Authentication routes */}
         <Route path="/login" element={
@@ -48,7 +48,7 @@ function AppRouter() {
         {/* Application routes - access control handled by RouteAccessControl */}
         <Route path="/" element={
           <RouteAccessControl path="/">
-            <HomePage />
+            {window.desktop ? <DesktopHome /> : <HomePage />}
           </RouteAccessControl>
         } />
         <Route path="/admin" element={

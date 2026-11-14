@@ -1,23 +1,19 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@contexts/AuthContext';
-import { Button } from './Button';
-import { Card } from './Card';
-import { Icon } from './Icon';
-import { Typography } from './Typography';
+import { useNotification } from '@contexts/NotificationContext';
 import { deviceService } from '../client/ai.client';
 
 const RECHECK_MS = 30000;
 const RECHECK_PROBLEM_MS = 5000;
 
-export const OllamaBanner = () => {
+export const OllamaWatcher = () => {
     const { user } = useAuth();
+    const { warning, success } = useNotification();
     const [problem, setProblem] = useState(null);
-    const [checking, setChecking] = useState(false);
 
     const lastState = useRef(null);
 
     const check = useCallback(async () => {
-        setChecking(true);
         let found = null;
         try {
             const status = await deviceService.getSetupStatus();
@@ -35,17 +31,22 @@ export const OllamaBanner = () => {
         } finally {
             setProblem(found);
             const state = found ? found.message || 'down' : 'up';
-            if (lastState.current !== null && lastState.current !== state) {
-                window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
+            if (lastState.current !== state) {
+                if (found) {
+                    warning(`${found.message || 'No device is available to run models right now.'} ${found.action || 'Start Ollama, then try again.'}`, { duration: 10000 });
+                } else if (lastState.current !== null) {
+                    success('Models are available again.');
+                }
+                if (lastState.current !== null) window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
             }
             lastState.current = state;
-            setChecking(false);
         }
-    }, []);
+    }, [warning, success]);
 
     useEffect(() => {
         if (!user) {
             setProblem(null);
+            lastState.current = null;
             return undefined;
         }
         check();
@@ -66,22 +67,7 @@ export const OllamaBanner = () => {
         return () => clearInterval(timer);
     }, [user, check, showing]);
 
-    if (!user || !problem) return null;
-
-    return (
-        <Card role="alert" backgroundColor="surface" hover={false} layout="flex" align="center" justify="center" gap="sm" padding="sm" width="100%">
-            <Icon name="FiAlertTriangle" size="sm" color="warning" />
-            <Typography weight="semibold">
-                {problem.message || 'Ollama is not running on this device.'}
-            </Typography>
-            <Typography size="sm">
-                {problem.action || 'Start Ollama, then check again.'}
-            </Typography>
-            <Button size="sm" color="secondary" onClick={check} disabled={checking}>
-                {checking ? 'Checking…' : 'Check again'}
-            </Button>
-        </Card>
-    );
+    return null;
 };
 
-export default OllamaBanner;
+export default OllamaWatcher;

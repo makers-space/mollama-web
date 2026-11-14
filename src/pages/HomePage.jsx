@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@contexts/AuthContext';
 import { useNotification } from '@contexts/NotificationContext';
 import { Page, Container, Card, Button, Typography, Icon, Badge, Input, Select, Divider, Data, Flow, TreeView, ProgressBar } from '@components/Components';
@@ -593,6 +593,25 @@ const HomePage = () => {
                     </Button>
                 </Container>
             </Band>
+        </Page>
+    );
+};
+
+// The desktop app opens on the dashboard, or on a short sign-in prompt, not on the public home page.
+export const DesktopHome = () => {
+    const navigate = useNavigate();
+    const { user } = useAuth();
+    if (user) return <Navigate to="/dashboard" replace />;
+    return (
+        <Page layout="flex" align="center" justify="center" background="dots" backgroundFade="radial">
+            <Card layout="flex-column" padding="xl" align="center" gap="md" width="100%" maxWidth="420px" hover={false}>
+                <Typography as="h1" size="xl" weight="bold" font="secondary" color="header">Mollama</Typography>
+                <Typography size="sm" color="muted" align="center">Sign in to use your models and devices from this computer.</Typography>
+                <Container layout="flex" justify="center" gap="sm" padding="none">
+                    <Button size="sm" color="primary" onClick={() => navigate('/login')}>Sign in</Button>
+                    <Button size="sm" color="secondary" onClick={() => navigate('/signup')}>Create an account</Button>
+                </Container>
+            </Card>
         </Page>
     );
 };
