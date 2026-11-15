@@ -315,7 +315,7 @@ const Calculator = ({ user }) => {
     };
 
     const fitting = result ? result.models.filter((model) => model.fit.fits) : [];
-    const tooLarge = result ? result.models.filter((model) => !model.fit.fits) : [];
+    const tooLarge = result ? result.models.filter((model) => !model.fit.fits && !model.cloudOnly) : [];
     const reserved = result?.reserved || { gpuMemoryMb: 1536, memoryMb: 4096 };
 
     const modelCard = (model) => {

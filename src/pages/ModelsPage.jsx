@@ -19,7 +19,7 @@ const PURPOSES = [
 ];
 
 const PICK_LABELS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality' };
-const FIT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error' };
+const FIT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'tertiary' };
 const RESUMABLE = ['DOWNLOAD_INTERRUPTED', 'OLLAMA_DOWN', 'DISK_FULL'];
 const ABILITY_LABELS = { tools: 'Can use tools', vision: 'Can read images', thinking: 'Thinks step by step' };
 
@@ -184,7 +184,8 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     const busy = job && ['queued', 'downloading'].includes(job.status);
     let action = null;
 
-    if (model.installed) action = <Badge size="xs" color="success">Installed</Badge>;
+    if (model.cloudOnly) action = null;
+    else if (model.installed) action = <Badge size="xs" color="success">Installed</Badge>;
     else if (busy) action = <Badge size="xs" color="primary">{job.status === 'queued' ? 'Waiting' : `Downloading ${job.percent}%`}</Badge>;
     else if (!model.fit.fits) action = <Badge size="xs" color="error">Too large</Badge>;
     else if (!model.fitsDisk) action = <Badge size="xs" color="error">Not enough disk</Badge>;
@@ -213,7 +214,9 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
             <Row>
                 <Container padding="none" flexFill minWidth="0">
                     <Typography size="xxs" color="muted" truncate>
-                        {[`${gb(model.sizeMb)}`, model.fit.tokensPerSecond ? speedWords(model.fit.tokensPerSecond) : null].filter(Boolean).join(' · ')}
+                        {model.cloudOnly
+                            ? 'Runs on Ollama\'s servers, not on your computer, so it cannot be downloaded.'
+                            : [`${gb(model.sizeMb)}`, model.fit.tokensPerSecond ? speedWords(model.fit.tokensPerSecond) : null].filter(Boolean).join(' · ')}
                     </Typography>
                 </Container>
                 {action}
@@ -222,10 +225,22 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     );
 };
 
-const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onMore, loading }) => {
+const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onMore, onAll, loading }) => {
     const [purpose, setPurpose] = useState('all');
     const [customName, setCustomName] = useState('');
     const [query, setQuery] = useState('');
+    const searched = useRef('');
+
+    // The list follows what is typed, a moment after the typing stops.
+    useEffect(() => {
+        const wanted = query.trim();
+        if (wanted === searched.current) return undefined;
+        const timer = setTimeout(() => {
+            searched.current = wanted;
+            onSearch(wanted);
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [query]);
 
     if (!catalogue) return <Typography size="xs" color="muted">Working out which models fit this device…</Typography>;
 
@@ -253,21 +268,19 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                         placeholder="Search every model on ollama.com, for example gemma or coder"
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        onKeyDown={(event) => { if (event.key === 'Enter') onSearch(query.trim()); }}
+                        onKeyDown={(event) => { if (event.key === 'Enter') { searched.current = query.trim(); onSearch(query.trim()); } }}
                         width="100%"
                         flexFill
                     />
-                    <Button size="sm" disabled={loading} onClick={() => onSearch(query.trim())}>
+                    <Button size="sm" disabled={loading} onClick={() => { searched.current = query.trim(); onSearch(query.trim()); }}>
                         <Icon name="FiSearch" size="xs" />Search
                     </Button>
+                    {catalogue.more && (
+                        <Button size="sm" color="secondary" disabled={loading} onClick={onAll} title="Load every model and size at once">
+                            <Icon name="FiList" size="xs" />Show all
+                        </Button>
+                    )}
                 </Container>
-                <Typography size="xxs" color="muted">
-                    {catalogue.unavailable
-                        ? 'Read live from ollama.com.'
-                        : catalogue.query
-                            ? `${catalogue.total} sizes match "${catalogue.query}" among the ${catalogue.library} models on ollama.com.`
-                            : `All ${catalogue.library} models on ollama.com, read live, most downloaded first. Showing ${catalogue.models.length} of ${catalogue.total} sizes.`}
-                </Typography>
             </Container>
             <Row>
                 <ButtonGroup size="xs" justify="start" wrap={false} selectable={false}>
@@ -313,9 +326,12 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
             )}
 
             {catalogue.more && (
-                <Container layout="flex" justify="center" padding="none" width="100%">
+                <Container layout="flex" justify="center" gap="xs" padding="none" width="100%">
                     <Button size="sm" color="secondary" disabled={loading} onClick={onMore}>
                         <Icon name="FiChevronDown" size="xs" />Show more models
+                    </Button>
+                    <Button size="sm" color="secondary" disabled={loading} onClick={onAll}>
+                        <Icon name="FiList" size="xs" />Show all {catalogue.total}
                     </Button>
                 </Container>
             )}
@@ -692,10 +708,10 @@ const ModelsPage = () => {
 
     const [catalogueLoading, setCatalogueLoading] = useState(false);
     // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
-    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1 } = {}) => {
+    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, all = false } = {}) => {
         setCatalogueLoading(true);
         try {
-            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}) });
+            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(all ? { all: true } : {}) });
             setCatalogue((now) => (page > 1 && now
                 ? { ...result, models: [...now.models, ...result.models.filter((model) => !now.models.some((shown) => shown.tag === model.tag)).map((model) => ({ ...model, pick: null }))] }
                 : result));
@@ -971,6 +987,7 @@ const ModelsPage = () => {
                         loading={catalogueLoading}
                         onSearch={(q) => device && loadCatalogue(device.id, { q })}
                         onMore={() => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', page: (catalogue.page || 1) + 1 })}
+                        onAll={() => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', all: true })}
                     />
                 )}
                 {device?.online && tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} elsewhere={elsewhere} />}
