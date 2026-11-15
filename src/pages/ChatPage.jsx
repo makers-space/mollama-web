@@ -1201,7 +1201,7 @@ const Centered = ({ gap = 'sm', children }) => (
     </Container>
 );
 
-const emptySetup = { instructions: [], temperature: '', num_ctx: '' };
+const emptySetup = { instructions: [], skills: null, temperature: '', num_ctx: '' };
 
 const ChatPage = () => {
     const { id: routeId } = useParams();
@@ -1216,6 +1216,8 @@ const ChatPage = () => {
     const [devices, setDevices] = useState([]);
     const [draftDevice, setDraftDevice] = useState(null);
     const [webSearch, setWebSearch] = useState(false);
+    const [draftSearch, setDraftSearch] = useState(true);
+    const [skills, setSkills] = useState([]);
     const [text, setText] = useState(() => {
         try {
             return sessionStorage.getItem('mollama-first-prompt') || '';
@@ -1337,6 +1339,7 @@ const ChatPage = () => {
         if (!chat) return;
         setDraftSetup({
             instructions: chat.instructions || [],
+            skills: chat.skills || null,
             temperature: chat.options?.temperature ?? '',
             num_ctx: chat.options?.num_ctx ?? ''
         });
@@ -1384,6 +1387,10 @@ const ChatPage = () => {
 
     useEffect(() => () => abortRef.current?.abort(), []);
 
+    useEffect(() => {
+        chatService.skills().then((result) => setSkills(result.skills || [])).catch(() => setSkills([]));
+    }, []);
+
     const setupBody = (setup = draftSetup) => {
         const options = {};
         if (setup.temperature !== '' && !Number.isNaN(Number(setup.temperature))) options.temperature = Number(setup.temperature);
@@ -1391,7 +1398,27 @@ const ChatPage = () => {
         const instructions = setup.instructions
             .filter((item) => item.text.trim())
             .map((item, index) => ({ name: item.name.trim() || `Instruction ${index + 1}`, text: item.text, source: item.source || 'ai-base', path: item.path || null }));
-        return { instructions, options };
+        return { instructions, options, skills: setup.skills };
+    };
+
+    // With nothing chosen, a chat uses the skills that are on by default.
+    const activeSkills = draftSetup.skills || skills.filter((skill) => skill.default).map((skill) => skill.id);
+    const toggleSkill = (id) => setDraftSetup((now) => ({
+        ...now,
+        skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id]
+    }));
+
+    const searchOn = webSearch && (chat ? chat.webSearch !== false : draftSearch);
+    const toggleSearch = async () => {
+        if (!chat) {
+            setDraftSearch((on) => !on);
+            return;
+        }
+        try {
+            setChat((await chatService.update(chat.id, { webSearch: !searchOn })).chat);
+        } catch (error) {
+            notifyError(describeError(error, 'Web search could not be changed for this chat.'));
+        }
     };
 
     const ensureChat = async () => {
@@ -1399,6 +1426,7 @@ const ChatPage = () => {
         const body = setupBody();
         if (draftModel) body.model = draftModel;
         if (draftDevice) body.device = draftDevice;
+        body.webSearch = draftSearch;
         const created = (await chatService.create(body)).chat;
         setChat(created);
         navigate(`/chat/${created.id}`, { replace: true });
@@ -1955,6 +1983,19 @@ const ChatPage = () => {
                                     </Container>
                                 )}
                             </Pop>
+                            <Button
+                                size="xs"
+                                variant="ghost"
+                                color={searchOn ? 'primary' : 'secondary'}
+                                selected={searchOn}
+                                disabled={!webSearch}
+                                title={!webSearch ? 'Web search is not set up on the server' : searchOn ? 'Web search is on for this chat. Click to turn it off.' : 'Web search is off for this chat. Click to turn it on.'}
+                                aria-label="Web search"
+                                aria-pressed={searchOn}
+                                onClick={toggleSearch}
+                            >
+                                <Icon name={searchOn ? 'FiGlobe' : 'FiSlash'} size="xs" />
+                            </Button>
                             <Input
                                 ref={fileInputRef}
                                 type="file"
@@ -2007,9 +2048,9 @@ const ChatPage = () => {
                     </Card>
                     <Container layout="flex" justify="center" padding="none" width="100%">
                         <Typography size="xxs" color="muted">
-                            {webSearch
+                            {searchOn
                                 ? 'Replies are written by a model running on this device. When the model searches the web, its search words go to the search service set on the server and the pages it opens are loaded by this server. Dictation is done by your browser, which may send your voice to its maker.'
-                                : 'Replies are written by a model running on this device. Nothing you type or attach is sent to an outside AI service. Web search is off, so models cannot look things up; it is turned on by setting a search key on the server. Dictation is done by your browser, which may send your voice to its maker.'}
+                                : `Replies are written by a model running on this device. Nothing you type or attach is sent to an outside AI service. ${webSearch ? 'Web search is off for this chat, so the model cannot look things up.' : 'Web search is off, so models cannot look things up; it is turned on by setting a search key on the server.'} Dictation is done by your browser, which may send your voice to its maker.`}
                         </Typography>
                     </Container>
                 </Centered>
@@ -2034,6 +2075,24 @@ const ChatPage = () => {
                             What the model should know or follow in this chat. Add as many pieces as you need: typed text, files, or ones you saved earlier.
                         </Typography>
                         {working && <Typography size="xs" color="muted">{working}</Typography>}
+                        {skills.length > 0 && (
+                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                                <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                                    <Typography size="xs" weight="semibold">Skills</Typography>
+                                    <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => setDraftSetup((now) => ({ ...now, skills: null }))}>Use defaults</Button>
+                                </Container>
+                                {skills.map((skill) => (
+                                    <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
+                                        <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                            <Typography size="xs">{skill.name}</Typography>
+                                            <Typography size="xxs" color="muted">{skill.description}</Typography>
+                                        </Container>
+                                        <Switch size="sm" checked={activeSkills.includes(skill.id)} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
+                                    </Container>
+                                ))}
+                                <Divider margin="xs" />
+                            </Container>
+                        )}
                         {articles.map((article, index) => (
                             <Container key={index} layout="flex-column" gap="xs" padding="none" width="100%">
                                 <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">

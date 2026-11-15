@@ -340,6 +340,7 @@ export const chatService = {
         chatDevice = deviceId || null;
     },
     list: (search) => api.get('/chats', { params: search ? { search } : {} }),
+    skills: () => api.get('/skills'),
     create: (body = {}) => api.post('/chats', body),
     get: (id) => api.get(`/chats/${id}`),
     update: (id, changes) => api.patch(`/chats/${id}`, changes),
