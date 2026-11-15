@@ -195,11 +195,9 @@ export const desktopService = {
         { id: 'mac', label: 'macOS', icon: 'FaApple', ending: '.dmg' },
         { id: 'linux', label: 'Linux', icon: 'FaLinux', ending: '.AppImage' }
     ],
-    // The staging site offers both builds, each under its own heading; everywhere else only the released app.
+    // Only the released app is offered for download; the staging build is still published for testers who ask for it.
     channels() {
-        const released = { id: 'production', name: 'Mollama', title: 'Mollama', opens: 'Opens www.mollama.one' };
-        const staging = { id: 'staging', name: 'Mollama-Staging', title: 'Mollama Staging', opens: 'Opens staging.mollama.one, for testing' };
-        return window.location.hostname.startsWith('staging.') ? [staging, released] : [released];
+        return [{ id: 'production', name: 'Mollama', title: 'Mollama', opens: 'Opens www.mollama.one' }];
     },
     address: (file) => `https://github.com/${INSTALLERS}/releases/latest/download/${file}`,
     async published() {

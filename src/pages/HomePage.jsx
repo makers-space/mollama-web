@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@contexts/AuthContext';
 import { useNotification } from '@contexts/NotificationContext';
-import { Page, Container, Card, Button, Typography, Icon, Badge, Input, Select, Divider, Data, Flow, TreeView, ProgressBar } from '@components/Components';
-import { deviceService, modelService, describeError, useActivity } from '../client/ai.client';
+import { Page, Container, Card, Button, ButtonGroup, Typography, Icon, Badge, Input, Select, Divider, Data, Flow, TreeView, ProgressBar } from '@components/Components';
+import { deviceService, modelService, desktopService, describeError, useActivity } from '../client/ai.client';
 import { CopyButton } from './ChatPage';
 
 const FIRST_PROMPT_KEY = 'mollama-first-prompt';
@@ -439,6 +439,40 @@ const Calculator = ({ user }) => {
     );
 };
 
+// Getting started means installing the desktop app, so each button downloads it for one kind of computer.
+const GetStarted = () => {
+    const [published, setPublished] = useState(null);
+    const channel = desktopService.channels()[0];
+    const order = ['windows', 'linux', 'mac'];
+
+    useEffect(() => {
+        let live = true;
+        desktopService.published().then((release) => { if (live) setPublished(release); });
+        return () => { live = false; };
+    }, []);
+
+    return (
+        <ButtonGroup size="sm" justify="start" selectable={false}>
+            {order.map((id) => desktopService.systems.find((system) => system.id === id)).map((system) => {
+                const file = `${channel.name}${system.ending}`;
+                const ready = published === null || published.files.includes(file);
+                return (
+                    <Button
+                        key={system.id}
+                        size="sm"
+                        color="primary"
+                        disabled={!ready}
+                        title={ready ? `Download the Mollama desktop app for ${system.label}` : `The ${system.label} app is not available yet`}
+                        onClick={() => window.open(desktopService.address(file), '_blank', 'noopener')}
+                    >
+                        <Icon name={system.icon} size="xs" />Get started on {system.label}
+                    </Button>
+                );
+            })}
+        </ButtonGroup>
+    );
+};
+
 const HomePage = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -494,6 +528,9 @@ const HomePage = () => {
                         >
                             {PITCH[pitch].text}
                         </Typography>
+                    </Container>
+                    <Container layout="flex" justify="start" padding="none" width="100%">
+                        <GetStarted />
                     </Container>
                 </Container>
 

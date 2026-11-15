@@ -215,7 +215,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
                 <Container padding="none" flexFill minWidth="0">
                     <Typography size="xxs" color="muted" truncate={!model.cloudOnly}>
                         {model.cloudOnly
-                            ? 'Cloud models are a paid subscription service that runs on Ollama\'s servers, not on your computer. It is not set up in Mollama yet, so this model cannot be used or downloaded.'
+                            ? 'Cloud models are a paid subscription service.'
                             : [`${gb(model.sizeMb)}`, model.fit.tokensPerSecond ? speedWords(model.fit.tokensPerSecond) : null].filter(Boolean).join(' · ')}
                     </Typography>
                 </Container>

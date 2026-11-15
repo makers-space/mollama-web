@@ -31,7 +31,7 @@ const Heading = ({ icon, title, children }) => (
 );
 
 const toGbText = (megabytes) => (megabytes ? String(Math.round(megabytes / 1024)) : '');
-export const DesktopDownloads = () => {
+export const DesktopDownloads = ({ vertical = false }) => {
     const [published, setPublished] = useState(null);
     const channels = desktopService.channels();
 
@@ -44,16 +44,16 @@ export const DesktopDownloads = () => {
     const ready = (file) => published === null || published.files.includes(file);
 
     return (
-        <Container layout="flex-column" gap="sm" padding="none" width="100%">
+        <Container layout={vertical ? 'flex' : 'flex-column'} gap="sm" padding="none" width={vertical ? 'auto' : '100%'} align="start" justify="end">
             {channels.map((channel) => (
-                <Container key={channel.id} layout="flex-column" gap="xs" padding="none" width="100%">
+                <Container key={channel.id} layout="flex-column" gap="xs" padding="none" width={vertical ? 'auto' : '100%'}>
                     {channels.length > 1 && (
                         <Container layout="flex" align="center" gap="xs" padding="none">
                             <Typography size="xs" weight="semibold" margin="none">{channel.title}</Typography>
                             <Badge size="xs" color={channel.id === 'staging' ? 'warning' : 'success'}>{channel.opens}</Badge>
                         </Container>
                     )}
-                    <ButtonGroup size="sm" justify="start" selectable={false}>
+                    <ButtonGroup size="sm" justify="start" selectable={false} vertical={vertical}>
                         {desktopService.systems.map((system) => {
                             const file = `${channel.name}${system.ending}`;
                             return (
@@ -321,17 +321,19 @@ const DevicesPage = () => {
                     ))}
 
 
-                    <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" hover={false} background="hex" backgroundFade="left">
-                        <Heading icon="FiPlusCircle" title={devices?.length ? 'Add another device' : 'Add a device'} />
-                        <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                            {ADD_STEPS.map((step, index) => (
-                                <Container key={step} layout="flex" align="start" gap="xs" padding="none" wrap={false}>
-                                    <Badge size="xs" color="primary">{index + 1}</Badge>
-                                    <Typography size="xs" color="muted">{step}</Typography>
-                                </Container>
-                            ))}
+                    <Card layout="flex" justify="between" align="center" gap="md" padding="md" width="100%" minWidth="0" span="full" hover={false} background="hex" backgroundFade="left">
+                        <Container layout="flex-column" gap="sm" padding="none" flexFill minWidth="0">
+                            <Heading icon="FiPlusCircle" title={devices?.length ? 'Add another device' : 'Add a device'} />
+                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                                {ADD_STEPS.map((step, index) => (
+                                    <Container key={step} layout="flex" align="start" gap="xs" padding="none" wrap={false}>
+                                        <Badge size="xs" color="primary">{index + 1}</Badge>
+                                        <Typography size="xs" color="muted">{step}</Typography>
+                                    </Container>
+                                ))}
+                            </Container>
                         </Container>
-                        <DesktopDownloads />
+                        <DesktopDownloads vertical />
                     </Card>
                 </Container>
             </Container>
