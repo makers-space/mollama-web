@@ -266,7 +266,9 @@ export const modelService = {
     updateModel: (request) => api.post('/models/update', request, onViewed()),
 
     getDeviceCatalogue: (deviceId, query = {}) => api.get(`/devices/${deviceId}/catalogue`, { params: query }),
-    getPublicCatalogue: (memoryMb, gpuMemoryMb) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb, sample: true } }),
+    // A server that is one version behind does not know "sample" yet; it is then asked the older way and the page trims the list itself.
+    getPublicCatalogue: (memoryMb, gpuMemoryMb) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb, sample: true } })
+        .catch((error) => (error?.response?.status === 400 ? api.get('/catalogue', { params: { memoryMb, gpuMemoryMb } }) : Promise.reject(error))),
 
     startDownload: (name) => api.post('/models/pull', { name }, onViewed()),
     listDownloads: () => api.get('/models/downloads', onViewed()),

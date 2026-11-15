@@ -316,9 +316,9 @@ const Calculator = ({ user }) => {
     };
 
     const shown = result ? result.models.filter((model) => !model.cloudOnly) : [];
-    const runsFully = shown.filter((model) => model.fit.verdict === 'gpu' || model.fit.verdict === 'cpu');
-    const withMemory = shown.filter((model) => model.fit.verdict === 'mixed');
-    const tooLarge = shown.filter((model) => !model.fit.fits);
+    const runsFully = shown.filter((model) => model.fit.verdict === 'gpu' || model.fit.verdict === 'cpu').slice(0, 6);
+    const withMemory = shown.filter((model) => model.fit.verdict === 'mixed').slice(0, 3);
+    const tooLarge = shown.filter((model) => !model.fit.fits).slice(0, 3);
     const compatible = result ? result.fitting ?? shown.filter((model) => model.fit.fits).length : 0;
     const reserved = result?.reserved || { gpuMemoryMb: 1536, memoryMb: 4096 };
 
