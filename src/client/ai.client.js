@@ -267,7 +267,7 @@ export const modelService = {
     createModel: (request) => api.post('/models/create', request, onViewed()),
     updateModel: (request) => api.post('/models/update', request, onViewed()),
 
-    getDeviceCatalogue: (deviceId) => api.get(`/devices/${deviceId}/catalogue`),
+    getDeviceCatalogue: (deviceId, query = {}) => api.get(`/devices/${deviceId}/catalogue`, { params: query }),
     getPublicCatalogue: (memoryMb, gpuMemoryMb) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb } }),
 
     startDownload: (name) => api.post('/models/pull', { name }, onViewed()),

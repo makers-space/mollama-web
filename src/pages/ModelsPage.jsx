@@ -221,9 +221,10 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     );
 };
 
-const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload }) => {
+const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onMore, loading }) => {
     const [purpose, setPurpose] = useState('all');
     const [customName, setCustomName] = useState('');
+    const [query, setQuery] = useState('');
 
     if (!catalogue) return <Typography size="xs" color="muted">Working out which models fit this device…</Typography>;
 
@@ -244,6 +245,25 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload }) => {
 
     return (
         <Container layout="flex-column" gap="md" padding="none" width="100%">
+            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                <Container layout="flex" gap="xs" padding="none" align="center" width="100%" wrap={false}>
+                    <Input
+                        size="sm"
+                        placeholder="Search the models on ollama.com, for example gemma or coder"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') onSearch(query.trim()); }}
+                        width="100%"
+                        flexFill
+                    />
+                    <Button size="sm" disabled={loading} onClick={() => onSearch(query.trim())}>
+                        <Icon name="FiSearch" size="xs" />Search
+                    </Button>
+                </Container>
+                <Typography size="xxs" color="muted">
+                    {catalogue.query ? `Results for "${catalogue.query}", read live from ollama.com.` : 'The most popular models, read live from ollama.com. Search to find any other.'}
+                </Typography>
+            </Container>
             <Row>
                 <ButtonGroup size="xs" justify="start" wrap={false} selectable={false}>
                     {PURPOSES.map((option) => (
@@ -268,7 +288,13 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload }) => {
                 </>
             )}
 
-            {catalogue.models.every((model) => !model.pick) && (
+            {catalogue.models.length === 0 && (
+                <Typography size="xs" color="muted">
+                    {catalogue.unavailable ? 'The list could not be loaded from ollama.com. You can still add a model by its name below.' : 'No model on ollama.com matched. Try other words, or add a model by its name below.'}
+                </Typography>
+            )}
+
+            {catalogue.models.length > 0 && catalogue.models.every((model) => !model.pick) && (
                 <Typography size="xs" color="muted">
                     None of the listed models is a comfortable fit for this device. Smaller ones may still run slowly.
                 </Typography>
@@ -279,6 +305,14 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload }) => {
                     <SectionTitle icon="FiGrid" title="All models" count={others.length} />
                     <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{others.map(card)}</Container>
                 </>
+            )}
+
+            {catalogue.more && (
+                <Container layout="flex" justify="center" padding="none" width="100%">
+                    <Button size="sm" color="secondary" disabled={loading} onClick={onMore}>
+                        <Icon name="FiChevronDown" size="xs" />Show more models
+                    </Button>
+                </Container>
             )}
 
             {canManage && (
@@ -651,11 +685,20 @@ const ModelsPage = () => {
     }, [notifyError]);
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadCatalogue = useCallback(async (deviceId) => {
+    const [catalogueLoading, setCatalogueLoading] = useState(false);
+    // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
+    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1 } = {}) => {
+        setCatalogueLoading(true);
         try {
-            setCatalogue(await modelService.getDeviceCatalogue(deviceId));
+            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}) });
+            setCatalogue((now) => (page > 1 && now
+                ? { ...result, models: [...now.models, ...result.models.filter((model) => !now.models.some((shown) => shown.tag === model.tag)).map((model) => ({ ...model, pick: null }))] }
+                : result));
         } catch (error) {
             notifyError(describeError(error, 'The model list could not be loaded.'));
+            setCatalogue((now) => (page > 1 && now ? { ...now, more: false } : { models: [], unavailable: true, query: q, page: 1, more: false }));
+        } finally {
+            setCatalogueLoading(false);
         }
     }, [notifyError]);
 
@@ -914,7 +957,16 @@ const ModelsPage = () => {
                     <Empty icon="FiMonitor" title={`${device.name} is offline`} text="Open the Mollama desktop app on that computer to see and manage its models." />
                 )}
                 {device?.online && tab === 'discover' && (
-                    <DiscoverTab catalogue={catalogue} jobs={jobs} canManage={canManage} ollamaUp={ollamaUp} onDownload={download} />
+                    <DiscoverTab
+                        catalogue={catalogue}
+                        jobs={jobs}
+                        canManage={canManage}
+                        ollamaUp={ollamaUp}
+                        onDownload={download}
+                        loading={catalogueLoading}
+                        onSearch={(q) => device && loadCatalogue(device.id, { q })}
+                        onMore={() => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', page: (catalogue.page || 1) + 1 })}
+                    />
                 )}
                 {device?.online && tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} elsewhere={elsewhere} />}
                 {device?.online && tab === 'running' && <RunningTab running={running} canManage={canManage} onUnload={unload} />}
