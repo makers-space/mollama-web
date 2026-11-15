@@ -10,7 +10,7 @@ import {
     ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor
 } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { chatService, fileService, modelService, promptService, describeError, downloadText, useGuide } from '../client/ai.client';
+import { chatService, deviceService, fileService, modelService, promptService, describeError, downloadText, useGuide } from '../client/ai.client';
 
 const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error' };
 const FIRST_MESSAGE = 'Explain what you can help me with in three sentences.';
@@ -1211,6 +1211,8 @@ const ChatPage = () => {
     const [chat, setChat] = useState(null);
     const [models, setModels] = useState([]);
     const [modelsLoaded, setModelsLoaded] = useState(false);
+    const [devices, setDevices] = useState([]);
+    const [draftDevice, setDraftDevice] = useState(null);
     const [webSearch, setWebSearch] = useState(false);
     const [text, setText] = useState(() => {
         try {
@@ -1265,9 +1267,30 @@ const ChatPage = () => {
         }
     }, [notifyError]);
 
+    // The computer this chat runs on. With none chosen the server picks one.
+    const currentDevice = chat?.device || draftDevice || null;
+
+    useEffect(() => {
+        deviceService.listDevices()
+            .then((result) => {
+                setDevices(result.devices);
+                const preferred = result.devices.find((device) => device.id === deviceService.chosen() && device.online)
+                    || result.devices.find((device) => device.id === result.current && device.online)
+                    || result.devices.find((device) => device.online);
+                setDraftDevice((now) => now || preferred?.id || null);
+            })
+            .catch(() => setDevices([]));
+    }, []);
+
+    useEffect(() => {
+        chatService.on(currentDevice);
+        return () => chatService.on(null);
+    }, [currentDevice]);
+
     const loadModels = useCallback(async () => {
         try {
-            const result = await modelService.listInstalled();
+            setModelsLoaded(false);
+            const result = await modelService.installedOn(currentDevice);
             setModels(result.models.filter((model) => model.canChat !== false));
             setWebSearch(Boolean(result.webSearch));
         } catch {
@@ -1275,7 +1298,7 @@ const ChatPage = () => {
         } finally {
             setModelsLoaded(true);
         }
-    }, []);
+    }, [currentDevice]);
 
     useEffect(() => {
         loadModels();
@@ -1315,6 +1338,27 @@ const ChatPage = () => {
 
     const currentModel = chat?.model || draftModel;
 
+    // After moving to another computer, a model that is not on it is swapped for one that is.
+    useEffect(() => {
+        if (!modelsLoaded || models.length === 0 || !currentModel || models.some((model) => model.name === currentModel)) return;
+        if (!chat) setDraftModel(models[0].name);
+        else chatService.update(chat.id, { model: models[0].name }).then((result) => setChat(result.chat)).catch(() => {});
+    }, [modelsLoaded, models, currentModel, chat?.id]);
+
+    const changeDevice = async (id) => {
+        closePop();
+        deviceService.choose(id);
+        if (!chat) {
+            setDraftDevice(id);
+            return;
+        }
+        try {
+            setChat((await chatService.update(chat.id, { device: id })).chat);
+        } catch (error) {
+            notifyError(describeError(error, 'The computer could not be changed.'));
+        }
+    };
+
     useEffect(() => {
         if (!modelsLoaded || models.length === 0) return;
         modelService.loadModel(currentModel || null)
@@ -1348,6 +1392,7 @@ const ChatPage = () => {
         if (chat) return chat;
         const body = setupBody();
         if (draftModel) body.model = draftModel;
+        if (draftDevice) body.device = draftDevice;
         const created = (await chatService.create(body)).chat;
         setChat(created);
         navigate(`/chat/${created.id}`, { replace: true });
@@ -1932,6 +1977,15 @@ const ChatPage = () => {
                                     </Typography>
                                 )}
                             </Container>
+                            {devices.length > 1 && (
+                                <Pop label={devices.find((device) => device.id === currentDevice)?.name || 'Computer'} icon="FiMonitor" iconEnd size="xs" open={pop === 'device'} onOpen={() => openPop('device')} onClose={closePop} width="330px">
+                                    {devices.map((device) => (
+                                        <Row key={device.id} icon="FiMonitor" label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online} onClick={() => changeDevice(device.id)}>
+                                            <Badge size="xxs" color={device.online ? 'success' : 'default'}>{device.online ? 'Online' : 'Offline'}</Badge>
+                                        </Row>
+                                    ))}
+                                </Pop>
+                            )}
                             <Pop label={modelLabel} icon="FiCpu" iconEnd size="xs" open={pop === 'model'} onOpen={() => openPop('model')} onClose={closePop} width="330px">
                                 {models.length === 0 && <Typography size="xs" color="muted">No model is installed yet.</Typography>}
                                 {models.map((model) => (

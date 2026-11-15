@@ -160,6 +160,7 @@ api.interceptors.request.use((config) => {
 
 // The Models page works on one computer at a time; its requests name that computer themselves.
 let viewedDevice = null;
+let chatDevice = null;
 const onDevice = (id) => (id ? { headers: { 'X-Mollama-Device': id } } : {});
 const onViewed = () => onDevice(viewedDevice);
 
@@ -262,7 +263,7 @@ export const modelService = {
     listRunning: () => api.get('/models/running', onViewed()),
     deleteModel: (name) => api.post('/models/delete', { name }, onViewed()),
     unloadModel: (name) => api.post('/models/unload', { name }, onViewed()),
-    loadModel: (name) => api.post('/models/load', name ? { name } : {}),
+    loadModel: (name) => api.post('/models/load', name ? { name } : {}, onDevice(chatDevice)),
     createModel: (request) => api.post('/models/create', request, onViewed()),
     updateModel: (request) => api.post('/models/update', request, onViewed()),
 
@@ -334,6 +335,10 @@ const readEvents = async (response, onEvent) => {
 };
 
 export const chatService = {
+    // The computer the open chat runs on; warming up a model goes to the same one.
+    on(deviceId) {
+        chatDevice = deviceId || null;
+    },
     list: (search) => api.get('/chats', { params: search ? { search } : {} }),
     create: (body = {}) => api.post('/chats', body),
     get: (id) => api.get(`/chats/${id}`),

@@ -79,7 +79,7 @@ export const DesktopDownloads = () => {
 
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
-const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, here, onSetUp }) => {
+const DeviceCard = ({ device, canManage, onChanged, onRemove, here, onSetUp }) => {
     const { success, error: notifyError } = useNotification();
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -140,7 +140,6 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, he
         <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false} span="full">
             <Heading icon="FiMonitor" title={device.name}>
                 <Container layout="flex" gap="xs" padding="none" align="center" justify="end">
-                    {current && <Badge size="xs" color="primary">In use</Badge>}
                     <Badge size="xs" color={device.online ? 'success' : 'default'}>{device.online ? 'Online' : 'Offline'}</Badge>
                     {device.online && (
                         <Badge size="xs" color={ollama.available ? 'success' : 'error'}>
@@ -148,7 +147,6 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, he
                         </Badge>
                     )}
                     {here && device.online && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
-                    {!current && device.online && <Button size="xs" color="primary" onClick={() => onUse(device)}>Use this device</Button>}
                     {device.kind !== 'local' && !device.online && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
                 </Container>
@@ -231,7 +229,6 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, he
 const DevicesPage = () => {
     const { error: notifyError, success, confirm } = useNotification();
     const [devices, setDevices] = useState(null);
-    const [current, setCurrent] = useState(null);
     const [here, setHere] = useState(null);
     const [canManage, setCanManage] = useState(false);
     const [failed, setFailed] = useState(false);
@@ -240,7 +237,6 @@ const DevicesPage = () => {
         try {
             const result = await deviceService.listDevices();
             setDevices(result.devices);
-            setCurrent(result.current || null);
             setCanManage(Boolean(result.permissions?.manage));
             setFailed(false);
         } catch (error) {
@@ -254,12 +250,6 @@ const DevicesPage = () => {
         window.addEventListener('ollama-availability-changed', load);
         return () => window.removeEventListener('ollama-availability-changed', load);
     }, [load]);
-
-    const chooseDevice = (device) => {
-        deviceService.choose(device.id);
-        success(`${device.name} is now the device Mollama works on.`);
-        load();
-    };
 
     const removeDevice = async (device) => {
         if (!(await confirm(`Remove ${device.name} from your account? It comes back if someone signs in to Mollama on it again.`))) return;
@@ -327,7 +317,7 @@ const DevicesPage = () => {
 
                 <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
                     {devices?.map((device) => (
-                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} current={device.id === current} onUse={chooseDevice} onRemove={removeDevice} here={device.id === here} onSetUp={setUpOllama} />
+                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} onRemove={removeDevice} here={device.id === here} onSetUp={setUpOllama} />
                     ))}
 
 
