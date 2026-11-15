@@ -1300,7 +1300,7 @@ const ChatPage = () => {
             setModelsLoaded(false);
             const result = await modelService.installedOn(currentDevice);
             setModels(result.models.filter((model) => model.canChat !== false));
-            setWebSearch(Boolean(result.webSearch));
+            if ('webSearch' in result) setWebSearch(Boolean(result.webSearch));
         } catch {
             setModels([]);
         } finally {
@@ -1388,7 +1388,11 @@ const ChatPage = () => {
     useEffect(() => () => abortRef.current?.abort(), []);
 
     useEffect(() => {
-        chatService.skills().then((result) => setSkills(result.skills || [])).catch(() => setSkills([]));
+        // Whether the server can search does not depend on any computer, so it is read here and not with the model list.
+        chatService.skills().then((result) => {
+            setSkills(result.skills || []);
+            setWebSearch(Boolean(result.webSearch));
+        }).catch(() => setSkills([]));
     }, []);
 
     const setupBody = (setup = draftSetup) => {
