@@ -154,9 +154,14 @@ const chosenDevice = () => {
 };
 const deviceHeader = () => (chosenDevice() ? { 'X-Mollama-Device': chosenDevice() } : {});
 api.interceptors.request.use((config) => {
-    Object.assign(config.headers, deviceHeader());
+    if (!config.headers['X-Mollama-Device']) Object.assign(config.headers, deviceHeader());
     return config;
 });
+
+// The Models page works on one computer at a time; its requests name that computer themselves.
+let viewedDevice = null;
+const onDevice = (id) => (id ? { headers: { 'X-Mollama-Device': id } } : {});
+const onViewed = () => onDevice(viewedDevice);
 
 export const deviceService = {
     listDevices: () => api.get('/devices'),
@@ -248,24 +253,30 @@ export const describeError = (error, fallback = 'Something went wrong. Please tr
 };
 
 export const modelService = {
-    listInstalled: () => api.get('/models'),
-    listRunning: () => api.get('/models/running'),
-    deleteModel: (name) => api.post('/models/delete', { name }),
-    unloadModel: (name) => api.post('/models/unload', { name }),
+    view(deviceId) {
+        viewedDevice = deviceId || null;
+    },
+    installedOn: (deviceId) => api.get('/models', onDevice(deviceId)),
+
+    listInstalled: () => api.get('/models', onViewed()),
+    listRunning: () => api.get('/models/running', onViewed()),
+    deleteModel: (name) => api.post('/models/delete', { name }, onViewed()),
+    unloadModel: (name) => api.post('/models/unload', { name }, onViewed()),
     loadModel: (name) => api.post('/models/load', name ? { name } : {}),
-    createModel: (request) => api.post('/models/create', request),
-    updateModel: (request) => api.post('/models/update', request),
+    createModel: (request) => api.post('/models/create', request, onViewed()),
+    updateModel: (request) => api.post('/models/update', request, onViewed()),
 
     getDeviceCatalogue: (deviceId) => api.get(`/devices/${deviceId}/catalogue`),
     getPublicCatalogue: (memoryMb, gpuMemoryMb) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb } }),
 
-    startDownload: (name) => api.post('/models/pull', { name }),
-    listDownloads: () => api.get('/models/downloads'),
-    pauseDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'pause' }),
-    cancelDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'cancel' }),
+    startDownload: (name) => api.post('/models/pull', { name }, onViewed()),
+    listDownloads: () => api.get('/models/downloads', onViewed()),
+    pauseDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'pause' }, onViewed()),
+    cancelDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'cancel' }, onViewed()),
 
     watchDownloads({ onSnapshot, onProgress, onError }) {
-        const source = new EventSource(`${API_BASE_URL}/models/downloads/stream${chosenDevice() ? `?device=${chosenDevice()}` : ''}`, { withCredentials: true });
+        const watched = viewedDevice || chosenDevice();
+        const source = new EventSource(`${API_BASE_URL}/models/downloads/stream${watched ? `?device=${watched}` : ''}`, { withCredentials: true });
         source.addEventListener('snapshot', (event) => onSnapshot(JSON.parse(event.data)));
         source.addEventListener('progress', (event) => onProgress(JSON.parse(event.data)));
         source.onerror = () => onError?.();

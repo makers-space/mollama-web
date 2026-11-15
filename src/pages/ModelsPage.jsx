@@ -311,7 +311,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload }) => {
     );
 };
 
-const InstalledTab = ({ installed, canManage, onDelete }) => {
+const InstalledTab = ({ installed, canManage, onDelete, elsewhere = {} }) => {
     if (!installed) return <Typography size="xs" color="muted">Looking for installed models…</Typography>;
     if (!installed.ollamaAvailable) {
         return <Empty icon="FiAlertCircle" title="Ollama is not running" text="Installed models cannot be listed until it is started." />;
@@ -337,6 +337,7 @@ const InstalledTab = ({ installed, canManage, onDelete }) => {
                     <Container layout="flex" gap="xs" padding="none" align="center">
                         {model.personal && <Badge size="xs" color="primary">Yours, on {model.basedOn}</Badge>}
                         {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary">{ability}</Badge>)}
+                        {elsewhere[model.name]?.length > 0 && <Badge size="xs" color="tertiary">Also on {elsewhere[model.name].join(', ')}</Badge>}
                     </Container>
                     <Typography size="xxs" color="muted">
                         {[
@@ -629,7 +630,9 @@ const ModelsPage = () => {
     const { success, error: notifyError, confirm } = useNotification();
     const [tab, setTab] = useState('discover');
     const guide = useGuide();
+    const [devices, setDevices] = useState(null);
     const [device, setDevice] = useState(null);
+    const [elsewhere, setElsewhere] = useState({});
     const [catalogue, setCatalogue] = useState(null);
     const [installed, setInstalled] = useState(null);
     const [running, setRunning] = useState(null);
@@ -664,11 +667,27 @@ const ModelsPage = () => {
         }
     }, []);
 
+    const loadDevices = useCallback(async () => {
+        try {
+            const result = await deviceService.listDevices();
+            setDevices(result.devices);
+            setDevice((now) => result.devices.find((entry) => entry.id === now?.id)
+                || result.devices.find((entry) => entry.id === result.current && entry.online)
+                || result.devices.find((entry) => entry.online)
+                || result.devices[0]
+                || null);
+        } catch (error) {
+            setDevices([]);
+            notifyError(describeError(error, 'Your devices could not be read.'));
+        }
+    }, [notifyError]);
+
     const refresh = useCallback(async () => {
         setRefreshing(true);
-        await Promise.all([loadInstalled(), device ? loadCatalogue(device.id) : null, loadRunning()]);
+        await loadDevices();
+        if (device?.online) await Promise.all([loadInstalled(), loadCatalogue(device.id), loadRunning()]);
         setRefreshing(false);
-    }, [device, loadInstalled, loadCatalogue, loadRunning]);
+    }, [device, loadDevices, loadInstalled, loadCatalogue, loadRunning]);
 
     useEffect(() => {
         const onFocus = () => refreshRef.current();
@@ -677,25 +696,45 @@ const ModelsPage = () => {
     }, []);
 
     useEffect(() => {
-        (async () => {
-            try {
-                const result = await deviceService.listDevices();
-                const chosen = result.devices.find((entry) => entry.id === result.current) || result.devices[0] || null;
-                setDevice(chosen);
-                if (chosen) loadCatalogue(chosen.id);
-            } catch (error) {
-                notifyError(describeError(error, 'This device could not be read.'));
-            }
-        })();
+        loadDevices();
+        return () => modelService.view(null);
+    }, [loadDevices]);
+
+    // Everything on the page belongs to the chosen computer, so it is read again when that changes.
+    const deviceId = device?.id || null;
+    const deviceOnline = Boolean(device?.online);
+    useEffect(() => {
+        modelService.view(deviceId);
+        statuses.current = new Map();
+        setInstalled(null);
+        setCatalogue(null);
+        setRunning(null);
+        setJobs([]);
+        if (!deviceId || !deviceOnline) return;
         loadInstalled();
-    }, [loadCatalogue, loadInstalled, notifyError]);
+        loadCatalogue(deviceId);
+    }, [deviceId, deviceOnline, loadInstalled, loadCatalogue]);
+
+    // Which of this computer's models are also on the person's other computers.
+    useEffect(() => {
+        let live = true;
+        const others = (devices || []).filter((entry) => entry.id !== deviceId && entry.online);
+        Promise.all(others.map((entry) => modelService.installedOn(entry.id).then((result) => [entry.name, result.models.map((model) => model.name)], () => [entry.name, []])))
+            .then((lists) => {
+                if (!live) return;
+                const found = {};
+                lists.forEach(([name, models]) => models.forEach((model) => { found[model] = [...(found[model] || []), name]; }));
+                setElsewhere(found);
+            });
+        return () => { live = false; };
+    }, [devices, deviceId, installed]);
 
     useEffect(() => {
-        if (tab !== 'running') return undefined;
+        if (tab !== 'running' || !deviceId || !deviceOnline) return undefined;
         loadRunning();
         const timer = setInterval(loadRunning, 5000);
         return () => clearInterval(timer);
-    }, [tab, loadRunning]);
+    }, [tab, loadRunning, deviceId, deviceOnline]);
 
     const refreshRef = useRef(() => {});
     useEffect(() => {
@@ -718,6 +757,7 @@ const ModelsPage = () => {
     }, []);
 
     useEffect(() => {
+        if (!deviceId || !deviceOnline) return undefined;
         let poll = null;
         const loadJobs = async () => {
             try {
@@ -748,7 +788,7 @@ const ModelsPage = () => {
             stop();
             if (poll) clearInterval(poll);
         };
-    }, [noteJob]);
+    }, [noteJob, deviceId, deviceOnline]);
 
     const act = async (action, failMessage) => {
         try {
@@ -786,7 +826,7 @@ const ModelsPage = () => {
             ? ` These personal models are built on it and will stop working: ${model.usedBy.join(', ')}.`
             : '';
         const agreed = await confirm(
-            `Delete ${model.displayName} from this device? You can download it again later.${dependants}`,
+            `Delete ${model.displayName} from ${device?.name || 'this device'}? You can download it again later.${elsewhere[model.name]?.length ? ` It stays on ${elsewhere[model.name].join(', ')}.` : ''}${dependants}`,
             { confirmLabel: 'Delete', color: 'error' }
         );
         if (!agreed) return;
@@ -824,13 +864,24 @@ const ModelsPage = () => {
                     </Button>
                 </Row>
 
+                {devices?.length > 1 && (
+                    <Container layout="flex" gap="xs" padding="none" align="center">
+                        {devices.map((entry) => (
+                            <Button key={entry.id} size="sm" color={entry.id === deviceId ? 'primary' : 'secondary'} selected={entry.id === deviceId} onClick={() => setDevice(entry)}>
+                                <Icon name="FiMonitor" size="xs" />{entry.name}
+                                <Badge size="xs" color={entry.online ? 'success' : 'default'}>{entry.online ? 'Online' : 'Offline'}</Badge>
+                            </Button>
+                        ))}
+                    </Container>
+                )}
+
                 <Container layout="grid" columns="auto-sm" gap="sm" padding="none" width="100%">
                     <Stat icon="FiBox" label="Installed" value={installed ? `${installed.models.length} models` : '…'} />
                     <Stat icon="FiHardDrive" label="Used by models" value={installed?.disk ? gb(installed.disk.usedByModelsMb) : '…'} />
                     <Stat icon="FiDatabase" label="Free disk" value={installed?.disk ? gb(installed.disk.freeMb) : '…'} />
                     <Stat
                         icon="FiCpu"
-                        label="This device"
+                        label={device?.name || 'Device'}
                         value={catalogue?.hardware?.gpuName || device?.hardware?.gpuName || device?.name || '…'}
                         note={device?.hardware?.gpuMemoryMb ? `${gb(device.hardware.gpuMemoryMb)} graphics memory` : null}
                     />
@@ -856,12 +907,18 @@ const ModelsPage = () => {
             </Container>
             <Container layout="flex" justify="center" padding="none" width="100%" flexFill minHeight="0" overflow="auto">
             <Container layout="flex-column" gap="md" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
-                {tab === 'discover' && (
+                {devices?.length === 0 && (
+                    <Empty icon="FiMonitor" title="No device is connected to your account" text="Open the Devices page to add a computer. Its models are then managed here." />
+                )}
+                {device && !device.online && (
+                    <Empty icon="FiMonitor" title={`${device.name} is offline`} text="Open the Mollama desktop app on that computer to see and manage its models." />
+                )}
+                {device?.online && tab === 'discover' && (
                     <DiscoverTab catalogue={catalogue} jobs={jobs} canManage={canManage} ollamaUp={ollamaUp} onDownload={download} />
                 )}
-                {tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} />}
-                {tab === 'running' && <RunningTab running={running} canManage={canManage} onUnload={unload} />}
-                {tab === 'mine' && (
+                {device?.online && tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} elsewhere={elsewhere} />}
+                {device?.online && tab === 'running' && <RunningTab running={running} canManage={canManage} onUnload={unload} />}
+                {device?.online && tab === 'mine' && (
                     <MineTab installed={installed} canManage={canManage} onCreated={refresh} onDelete={deleteModel} />
                 )}
             </Container>
