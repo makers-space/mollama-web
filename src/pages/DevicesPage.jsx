@@ -163,11 +163,13 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, he
                 <Container layout="grid" columns="auto-sm" gap="sm" padding="none" width="100%">
                     <Tile
                         icon="FiZap"
-                        label="Graphics card"
-                        value={hardware.hasGpu ? (hardware.gpuName || 'Graphics card') : 'None found'}
-                        note={hardware.hasGpu
-                            ? `${formatGb(hardware.gpuMemoryMb)} of graphics memory`
-                            : 'Models run on the processor, which is slower'}
+                        label={hardware.gpuShared ? 'Graphics' : 'Graphics card'}
+                        value={!hardware.hasGpu ? 'None found' : hardware.gpuShared ? 'Built in' : (hardware.gpuName || 'Graphics card')}
+                        note={!hardware.hasGpu
+                            ? 'Models run on the processor, which is slower'
+                            : hardware.gpuShared
+                                ? `Shares the ${formatGb(hardware.memoryMb)} of system memory. About ${formatGb(hardware.gpuMemoryMb)} of it can hold a model (an estimate).`
+                                : `${formatGb(hardware.gpuMemoryMb)} of graphics memory`}
                     />
                     <Tile icon="FiLayers" label="System memory" value={formatGb(hardware.memoryMb)} />
                     <Tile
