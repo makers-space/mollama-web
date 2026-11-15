@@ -948,22 +948,24 @@ const STEP_FAILURES = {
     limited: 'the search service is limiting requests right now. Wait a few minutes, or check the monthly allowance of the search key.',
     unreachable: 'the web could not be reached.'
 };
-const stepText = (step) => {
+// A step still under way reads as something happening now; a finished one as something done.
+const stepText = (step, active = false) => {
     const what = step.tool === 'web_fetch' ? `read ${hostOf(step.input)}` : `search the web for “${step.input}”`;
     if (step.failed) return `Could not ${what}: ${STEP_FAILURES[step.failed] || STEP_FAILURES.unreachable}`;
+    if (active) return step.tool === 'web_fetch' ? `Reading ${hostOf(step.input)}…` : `Searching the web for “${step.input}”…`;
     return step.tool === 'web_fetch' ? `Read ${hostOf(step.input)}` : `Searched the web for “${step.input}”`;
 };
 
-const Steps = ({ steps }) => (
+const Steps = ({ steps, live = false }) => (
     <Container layout="flex-column" gap="none" padding="none" marginBottom="xs">
         {steps.map((step, index) => (
             <Container key={index} layout="flex" wrap={false} align="center" gap="xs" padding="none">
                 <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
                 {step.failed
-                    ? <Typography size="xxs" color="error">{stepText(step)}</Typography>
+                    ? <Typography size="xxs" color="error">{stepText(step, live && index === steps.length - 1)}</Typography>
                     : step.tool === 'web_fetch'
-                    ? <Typography size="xxs" color="muted" href={/^https?:/i.test(step.input) ? step.input : undefined} target="_blank" rel="noreferrer noopener" truncate>{stepText(step)}</Typography>
-                    : <Typography size="xxs" color="muted" truncate>{stepText(step)}</Typography>}
+                    ? <Typography size="xxs" color="muted" href={/^https?:/i.test(step.input) ? step.input : undefined} target="_blank" rel="noreferrer noopener" truncate>{stepText(step, live && index === steps.length - 1)}</Typography>
+                    : <Typography size="xxs" color="muted" truncate>{stepText(step, live && index === steps.length - 1)}</Typography>}
             </Container>
         ))}
     </Container>
@@ -1187,7 +1189,7 @@ const liveStatus = (live) => {
     if (live.ahead > 0) return `Waiting for the model — ${live.ahead} ahead of you`;
     if (!live.started) return 'Sending…';
     if (live.note) return live.note;
-    if (live.sharing > 0) return 'Another reply is being written at the same time, so this one may wait for it.';
+    if (live.sharing > 0) return 'Waiting for another reply that is being written at the same time…';
     if (!live.loaded) return 'Loading the model into memory. The first reply takes longest.';
     return 'Thinking…';
 };
@@ -1861,7 +1863,7 @@ const ChatPage = () => {
                         ))}
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                {live.steps?.length > 0 && <Steps steps={live.steps} />}
+                                {live.steps?.length > 0 && <Steps steps={live.steps} live />}
                                 {live.thinking && <Thinking text={live.thinking} startOpen />}
                                 {live.content
                                     ? <BlockContext.Provider value={LIVE_BLOCKS}><Markdown text={live.content} /></BlockContext.Provider>
