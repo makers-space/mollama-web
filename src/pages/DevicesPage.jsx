@@ -148,13 +148,13 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) 
                         </Badge>
                     )}
                     {!current && device.online && <Button size="xs" color="primary" onClick={() => onUse(device)}>Use this device</Button>}
-                    {device.kind !== 'local' && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
+                    {device.kind !== 'local' && !device.online && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
                 </Container>
             </Heading>
             <Typography size="xxs" color="muted">
                 {device.kind === 'local' ? 'The computer Mollama is running on.' : 'Linked through the Mollama desktop app.'}
-                {!device.online && ' Open the Mollama desktop app on it to bring it online.'}
+                {!device.online && ' Open the Mollama desktop app on it to bring it online, or remove it if that computer is no longer yours to use.'}
                 {device.online && !ollama.available && ' Start Ollama on this computer, then read it again.'}
             </Typography>
 
@@ -258,7 +258,7 @@ const DevicesPage = () => {
     };
 
     const removeDevice = async (device) => {
-        if (!(await confirm(`Remove ${device.name}? It stops being available until its desktop app signs in again.`))) return;
+        if (!(await confirm(`Remove ${device.name} from your account? It comes back if someone signs in to Mollama on it again.`))) return;
         try {
             await deviceService.removeDevice(device.id);
             if (deviceService.chosen() === device.id) deviceService.choose('');
