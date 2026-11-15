@@ -203,6 +203,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
                 <Typography as="h3" size="sm" weight="semibold" truncate title={model.name}>{model.name}</Typography>
                 {model.pick && <Badge size="xs" color="primary">{PICK_LABELS[model.pick]}</Badge>}
             </Row>
+            <Typography size="xxs" color="muted" font="monospace" truncate title="Its name on Ollama">{model.tag}</Typography>
             <Typography size="xs" color="muted">{model.description}</Typography>
             <Container layout="flex" gap="xs" padding="none" align="center">
                 <Badge size="xs" color={FIT_COLORS[model.fit.verdict]}>{model.fit.label}</Badge>
@@ -249,7 +250,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                 <Container layout="flex" gap="xs" padding="none" align="center" width="100%" wrap={false}>
                     <Input
                         size="sm"
-                        placeholder="Search the models on ollama.com, for example gemma or coder"
+                        placeholder="Search every model on ollama.com, for example gemma or coder"
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                         onKeyDown={(event) => { if (event.key === 'Enter') onSearch(query.trim()); }}
@@ -261,7 +262,11 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                     </Button>
                 </Container>
                 <Typography size="xxs" color="muted">
-                    {catalogue.query ? `Results for "${catalogue.query}", read live from ollama.com.` : 'The most popular models, read live from ollama.com. Search to find any other.'}
+                    {catalogue.unavailable
+                        ? 'Read live from ollama.com.'
+                        : catalogue.query
+                            ? `${catalogue.total} sizes match "${catalogue.query}" among the ${catalogue.library} models on ollama.com.`
+                            : `All ${catalogue.library} models on ollama.com, read live, most downloaded first. Showing ${catalogue.models.length} of ${catalogue.total} sizes.`}
                 </Typography>
             </Container>
             <Row>
@@ -290,7 +295,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
 
             {catalogue.models.length === 0 && (
                 <Typography size="xs" color="muted">
-                    {catalogue.unavailable ? 'The list could not be loaded from ollama.com. You can still add a model by its name below.' : 'No model on ollama.com matched. Try other words, or add a model by its name below.'}
+                    {catalogue.unavailable ? 'The list could not be loaded from ollama.com. You can still add a model by its name below.' : 'No model in the ollama.com library matched. Try other words, or add a model by its name below.'}
                 </Typography>
             )}
 

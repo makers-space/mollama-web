@@ -393,7 +393,7 @@ const Calculator = ({ user }) => {
                             ))}
                         </Container>
                     )}
-                    <Typography size="xs" weight="semibold">{fitting.length} of {result.models.length} listed models fit {gbText(result.hardware.memoryMb)} of memory{result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}</Typography>
+                    <Typography size="xs" weight="semibold">{result.fitting ?? fitting.length} of {result.total ?? result.models.length} model sizes on ollama.com fit {gbText(result.hardware.memoryMb)} of memory{result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}</Typography>
                     <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{fitting.map(modelCard)}</Container>
                     {tooLarge.length > 0 && (
                         <>
