@@ -1276,7 +1276,11 @@ const ChatPage = () => {
         deviceService.listDevices()
             .then((result) => {
                 setDevices(result.devices);
-                const preferred = result.devices.find((device) => device.id === deviceService.chosen() && device.online)
+                const ready = result.devices.filter((device) => device.online && device.ollama?.available);
+                const preferred = ready.find((device) => device.id === deviceService.chosen())
+                    || ready.find((device) => device.id === result.current)
+                    || ready[0]
+                    || result.devices.find((device) => device.id === deviceService.chosen() && device.online)
                     || result.devices.find((device) => device.id === result.current && device.online)
                     || result.devices.find((device) => device.online);
                 setDraftDevice((now) => now || preferred?.id || null);

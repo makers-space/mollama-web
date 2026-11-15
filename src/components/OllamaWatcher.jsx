@@ -18,7 +18,13 @@ export const OllamaWatcher = () => {
         let found = null;
         try {
             const status = await deviceService.getSetupStatus();
-            found = status.ollama?.available ? null : status.ollama;
+            const account = status.account || status.ollama;
+            found = account?.available ? null : account;
+            // The computer in use cannot run models but another can, so the app moves to that one.
+            if (!status.ollama?.available && status.ready && deviceService.chosen() !== status.ready) {
+                deviceService.choose(status.ready);
+                window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
+            }
         } catch (error) {
             const data = error?.response?.data;
             if (data?.code === 'DATABASE_DOWN') {
@@ -34,7 +40,7 @@ export const OllamaWatcher = () => {
             const state = found ? found.message || 'down' : 'up';
             if (lastState.current !== state) {
                 if (found) {
-                    warning(`${found.message || 'No device is available to run models right now.'} ${found.action || 'Start Ollama, then try again.'}`, { duration: 10000 });
+                    warning(`${found.message || 'No device is available to run models right now.'} ${found.action || ''}`, { duration: 10000 });
                 } else if (lastState.current !== null) {
                     success('Models are available again.');
                 }
