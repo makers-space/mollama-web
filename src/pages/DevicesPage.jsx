@@ -79,7 +79,7 @@ export const DesktopDownloads = () => {
 
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
-const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) => {
+const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove, here, onSetUp }) => {
     const { success, error: notifyError } = useNotification();
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -147,6 +147,7 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) 
                             {ollama.available ? `Ollama ${ollama.version}` : 'Ollama is not running'}
                         </Badge>
                     )}
+                    {here && device.online && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
                     {!current && device.online && <Button size="xs" color="primary" onClick={() => onUse(device)}>Use this device</Button>}
                     {device.kind !== 'local' && !device.online && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
@@ -155,7 +156,7 @@ const DeviceCard = ({ device, canManage, onChanged, current, onUse, onRemove }) 
             <Typography size="xxs" color="muted">
                 {device.kind === 'local' ? 'The computer Mollama is running on.' : 'Linked through the Mollama desktop app.'}
                 {!device.online && ' Open the Mollama desktop app on it to bring it online, or remove it if that computer is no longer yours to use.'}
-                {device.online && !ollama.available && ' Start Ollama on this computer, then read it again.'}
+                {device.online && !ollama.available && (here ? ' Ollama is not running here. Set up Ollama installs it if needed and starts it.' : ' Start Ollama on that computer, or open Mollama on it and choose Set up Ollama.')}
             </Typography>
 
             {!editing && (
@@ -229,6 +230,7 @@ const DevicesPage = () => {
     const { error: notifyError, success, confirm } = useNotification();
     const [devices, setDevices] = useState(null);
     const [current, setCurrent] = useState(null);
+    const [here, setHere] = useState(null);
     const [canManage, setCanManage] = useState(false);
     const [failed, setFailed] = useState(false);
 
@@ -267,6 +269,18 @@ const DevicesPage = () => {
         } catch (error) {
             notifyError(describeError(error, 'The device could not be removed.'));
         }
+    };
+
+    useEffect(() => {
+        window.desktop?.deviceState?.().then((state) => setHere(state?.deviceId || null));
+    }, [devices]);
+
+    const setUpOllama = async () => {
+        success('Setting up Ollama on this computer. Answer the question Mollama asks, then wait for it to finish.');
+        const result = await window.desktop.setUpOllama();
+        if (result === 'running') success('Ollama is running on this computer.');
+        else if (result === 'failed') notifyError('Ollama could not be set up. Install it from ollama.com, then try again.');
+        load();
     };
 
     const replaceDevice = (updated) => {
@@ -311,7 +325,7 @@ const DevicesPage = () => {
 
                 <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
                     {devices?.map((device) => (
-                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} current={device.id === current} onUse={chooseDevice} onRemove={removeDevice} />
+                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} current={device.id === current} onUse={chooseDevice} onRemove={removeDevice} here={device.id === here} onSetUp={setUpOllama} />
                     ))}
 
 
