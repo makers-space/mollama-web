@@ -230,6 +230,7 @@ const SectionHead = ({ title, children, reverse = false }) => {
 };
 
 const Calculator = ({ user }) => {
+    const navigate = useNavigate();
     const { error: notifyError } = useNotification();
     const activity = useActivity();
     const [memory, setMemory] = useState('');
@@ -314,8 +315,11 @@ const Calculator = ({ user }) => {
         }
     };
 
-    const fitting = result ? result.models.filter((model) => model.fit.fits) : [];
-    const tooLarge = result ? result.models.filter((model) => !model.fit.fits && !model.cloudOnly) : [];
+    const shown = result ? result.models.filter((model) => !model.cloudOnly) : [];
+    const runsFully = shown.filter((model) => model.fit.verdict === 'gpu' || model.fit.verdict === 'cpu');
+    const withMemory = shown.filter((model) => model.fit.verdict === 'mixed');
+    const tooLarge = shown.filter((model) => !model.fit.fits);
+    const compatible = result ? result.fitting ?? shown.filter((model) => model.fit.fits).length : 0;
     const reserved = result?.reserved || { gpuMemoryMb: 1536, memoryMb: 4096 };
 
     const modelCard = (model) => {
@@ -381,6 +385,10 @@ const Calculator = ({ user }) => {
                 {problem && <Typography size="xs" color="error">{problem}</Typography>}
             </Card>
 
+            <Container layout="flex" justify="start" padding="none" width="100%">
+                <GetStarted />
+            </Container>
+
             {result && (
                 <>
                     {result.notes.length > 0 && (
@@ -393,19 +401,32 @@ const Calculator = ({ user }) => {
                             ))}
                         </Container>
                     )}
-                    <Typography size="xs" weight="semibold">{result.fitting ?? fitting.length} of {result.total ?? result.models.length} model sizes on ollama.com fit {gbText(result.hardware.memoryMb)} of memory{result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}</Typography>
-                    <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{fitting.map(modelCard)}</Container>
+                    {runsFully.length > 0 && (
+                        <>
+                            <Typography size="xs" weight="semibold">{result.hardware.gpuMemoryMb ? 'Runs fully on the graphics card' : 'Runs on the processor'}</Typography>
+                            <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{runsFully.map(modelCard)}</Container>
+                        </>
+                    )}
+                    {withMemory.length > 0 && (
+                        <>
+                            <Typography size="xs" weight="semibold">Runs on the graphics card with help from system memory</Typography>
+                            <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{withMemory.map(modelCard)}</Container>
+                        </>
+                    )}
                     {tooLarge.length > 0 && (
                         <>
                             <Typography size="xs" weight="semibold" color="muted">Too large for this machine</Typography>
                             <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{tooLarge.map(modelCard)}</Container>
                         </>
                     )}
-                    {!user && (
-                        <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%">
-                            <Typography size="xs" color="muted">Sign in on the machine itself and Mollama reads these numbers for you and downloads with one button.</Typography>
-                        </Container>
-                    )}
+                    <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%">
+                        <Typography size="xs" weight="semibold">
+                            {compatible} of {result.total ?? shown.length} model sizes on ollama.com are compatible with {gbText(result.hardware.memoryMb)} of memory{result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}. {user ? 'The full list is on the Models page.' : 'Sign in to see the full list.'}
+                        </Typography>
+                        <Button size="sm" color="primary" onClick={() => navigate(user ? '/models' : '/login')}>
+                            {user ? 'See the full list' : 'Sign in'}<Icon name="FiArrowRight" size="xs" />
+                        </Button>
+                    </Container>
                 </>
             )}
 
@@ -528,9 +549,6 @@ const HomePage = () => {
                         >
                             {PITCH[pitch].text}
                         </Typography>
-                    </Container>
-                    <Container layout="flex" justify="start" padding="none" width="100%">
-                        <GetStarted />
                     </Container>
                 </Container>
 

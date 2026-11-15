@@ -147,7 +147,7 @@ const DeviceCard = ({ device, canManage, onChanged, onRemove, here, onSetUp }) =
                         </Badge>
                     )}
                     {here && device.online && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
-                    {device.kind !== 'local' && !device.online && <Button size="xs" color="error" onClick={() => onRemove(device)}>Remove</Button>}
+                    {device.kind !== 'local' && !here && <Button size="xs" color="error" onClick={() => onRemove(device)}><Icon name="FiTrash2" size="xs" />Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
                 </Container>
             </Heading>
@@ -252,7 +252,8 @@ const DevicesPage = () => {
     }, [load]);
 
     const removeDevice = async (device) => {
-        if (!(await confirm(`Remove ${device.name} from your account? It comes back if someone signs in to Mollama on it again.`))) return;
+        const now = device.online ? ' It is connected right now and will be disconnected.' : '';
+        if (!(await confirm(`Remove ${device.name} from your account?${now} It comes back if someone signs in to Mollama on it again.`, { confirmLabel: 'Remove', color: 'error' }))) return;
         try {
             await deviceService.removeDevice(device.id);
             if (deviceService.chosen() === device.id) deviceService.choose('');
