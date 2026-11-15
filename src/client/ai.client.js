@@ -1,5 +1,6 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from '@contexts/AuthContext';
+import { useNotification } from '@contexts/NotificationContext';
 import { Button, Container, Icon, Typography } from '@components/Components';
 import { sharedAPI as api, API_BASE_URL, refreshCsrfToken, appService } from './app.client.js';
 
@@ -214,14 +215,18 @@ export const desktopService = {
 
 // Inside the desktop app, signing in links this computer to the account and signing out unlinks it.
 export const useDeviceLink = () => {
-    const { user, isLoading } = useAuth();
+    const { user, isLoading, logout } = useAuth();
+    const { warning } = useNotification();
     const userId = user?.id || user?._id || null;
 
     useEffect(() => {
         const desktop = window.desktop;
         if (!desktop?.link || isLoading) return undefined;
         let cancelled = false;
-        (async () => {
+        let busy = false;
+        const sync = async () => {
+            if (busy || cancelled) return;
+            busy = true;
             try {
                 const state = await desktop.deviceState();
                 if (!userId) {
@@ -231,7 +236,17 @@ export const useDeviceLink = () => {
                 }
                 sessionStorage.setItem('mollama-signed-in', '1');
                 const { devices } = await api.get('/devices');
-                if (state?.deviceId && state.user === String(userId) && devices.some((device) => device.id === state.deviceId)) return;
+                const mine = Boolean(state?.deviceId) && state.user === String(userId);
+                if (mine && devices.some((device) => device.id === state.deviceId)) return;
+                // This computer was linked for this person and is no longer on their account: it was removed from another
+                // device, so it signs out here instead of quietly adding itself back.
+                if (mine) {
+                    await desktop.unlink();
+                    sessionStorage.removeItem('mollama-signed-in');
+                    warning('This computer was removed from your account, so it has been signed out. Sign in again to add it back.', { duration: 10000 });
+                    await logout();
+                    return;
+                }
                 const hardware = await desktop.hardware();
                 const linked = await api.post('/devices/link', { hostname: hardware.hostname, hardware });
                 if (cancelled) return;
@@ -239,9 +254,19 @@ export const useDeviceLink = () => {
                 await desktop.link({ deviceId: linked.device.id, key: linked.key, user: String(userId), socketUrl });
             } catch {
                 return;
+            } finally {
+                busy = false;
             }
-        })();
-        return () => { cancelled = true; };
+        };
+        sync();
+        // A removal made on another device is noticed here without waiting for the app to be reopened.
+        const timer = userId ? setInterval(sync, 30000) : null;
+        window.addEventListener('focus', sync);
+        return () => {
+            cancelled = true;
+            if (timer) clearInterval(timer);
+            window.removeEventListener('focus', sync);
+        };
     }, [userId, isLoading]);
 };
 
