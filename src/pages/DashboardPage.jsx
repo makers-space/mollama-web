@@ -161,12 +161,18 @@ const DashboardPage = () => {
                                 {busy === 0 && <Line icon="FiMoon" title="Nothing is running" note="Replies being written and downloads show here, each with a way to stop it." />}
                                 {activity.replies.map((reply) => (
                                     <Line key={reply.chatId} icon="FiEdit3" title={reply.title} note={`${reply.model} is replying${reply.waiting ? `, ${reply.waiting} more waiting` : ''}`} onClick={() => navigate(`/chat/${reply.chatId}`)}>
+                                        <Button size="xs" color="secondary" title="Open this chat" aria-label={`Open ${reply.title}`} onClick={(event) => { event.stopPropagation(); navigate(`/chat/${reply.chatId}`); }}>
+                                            <Icon name="FiArrowRight" size="xs" />Open
+                                        </Button>
                                         <Button size="xs" color="error" onClick={(event) => { event.stopPropagation(); activity.stopReply(reply.chatId); }}>Stop</Button>
                                     </Line>
                                 ))}
                                 {activity.downloads.map((job) => (
                                     <Container key={job.id} layout="flex-column" gap="none" padding="none" width="100%">
                                         <Line icon="FiDownload" title={job.model} note={job.status === 'queued' ? 'Waiting to download' : `Downloading, ${job.percent}%`} onClick={() => navigate('/models')}>
+                                            <Button size="xs" color="secondary" title="Open the Models page" aria-label={`Open ${job.model} on the Models page`} onClick={(event) => { event.stopPropagation(); navigate('/models'); }}>
+                                                <Icon name="FiArrowRight" size="xs" />Open
+                                            </Button>
                                             {activity.canManage && <Button size="xs" color="secondary" onClick={(event) => { event.stopPropagation(); activity.cancelDownload(job.id); }}>Cancel</Button>}
                                         </Line>
                                         <ProgressBar value={job.percent} size="sm" width="100%" animated={job.status === 'downloading'} />
