@@ -42,16 +42,16 @@ const Row = ({ icon, iconColor = 'primary', label, title, size = 'xs', color = '
         padding="xs"
         width="100%"
         hoverable={!disabled}
-        backgroundColor={selected ? 'surface' : 'transparent'}
+        backgroundColor={selected ? 'primary' : 'transparent'}
         role="button"
         tabIndex={disabled ? -1 : 0}
         title={title || label}
         onClick={disabled ? undefined : onClick}
         onKeyDown={(event) => event.key === 'Enter' && !disabled && onClick?.()}
     >
-        {icon && <Icon name={icon} size="xs" color={disabled ? 'text' : iconColor} />}
+        {icon && <Icon name={icon} size="xs" color={selected ? 'contrast' : disabled ? 'text' : iconColor} />}
         <Container padding="none" flexFill minWidth="0">
-            <Typography size={size} truncate color={disabled ? 'muted' : selected && color === 'default' ? 'primary' : color} weight={selected ? 'semibold' : 'normal'}>
+            <Typography size={size} truncate color={selected ? 'contrast' : disabled ? 'muted' : color} weight={selected ? 'semibold' : 'normal'}>
                 {label}
             </Typography>
         </Container>
