@@ -180,6 +180,10 @@ export const deviceService = {
     listDevices: () => api.get('/devices'),
     linkDevice: (details) => api.post('/devices/link', details),
     removeDevice: (id) => api.delete(`/devices/${id}`),
+    pauseDevice: (id) => api.post(`/devices/${id}/pause`, {}),
+    resumeDevice: (id) => api.post(`/devices/${id}/resume`, {}),
+    // A computer that can run a model right now: connected, not paused, Ollama running and at least one model on it.
+    ready: (device) => Boolean(device?.online && !device.paused && device.ollama?.available && device.ollama.modelCount > 0),
     chosen: chosenDevice,
     choose(id) {
         try {
@@ -393,6 +397,8 @@ export const chatService = {
     removeAttachment: (id, attachmentId) => api.delete(`/chats/${id}/attachments/${attachmentId}`),
 
     stop: (id) => api.post(`/chats/${id}/stop`, {}),
+    // What a reply in progress has sent so far, with the number of its latest piece.
+    live: (id) => api.get(`/chats/${id}/live`),
 
     async rejoin(id, { onEvent, signal }) {
         const response = await fetch(`${API_BASE_URL}/chats/${id}/reply`, { credentials: 'include', signal, headers: deviceHeader() });

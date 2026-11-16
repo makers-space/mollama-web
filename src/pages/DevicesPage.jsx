@@ -79,7 +79,7 @@ export const DesktopDownloads = ({ vertical = false }) => {
 
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
-const DeviceCard = ({ device, canManage, onChanged, onRemove, here, onSetUp }) => {
+const DeviceCard = ({ device, canManage, onChanged, onRemove, onPause, here, onSetUp }) => {
     const { success, error: notifyError } = useNotification();
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -140,13 +140,19 @@ const DeviceCard = ({ device, canManage, onChanged, onRemove, here, onSetUp }) =
         <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false} span="full">
             <Heading icon="FiMonitor" title={device.name}>
                 <Container layout="flex" gap="xs" padding="none" align="center" justify="end">
-                    <Badge size="xs" color={device.online ? 'success' : 'default'}>{device.online ? 'Online' : 'Offline'}</Badge>
-                    {device.online && (
+                    {deviceService.ready(device) && <Icon name="FiCheckCircle" size="sm" color="success" title="Ready to use right now" aria-label="Ready to use right now" />}
+                    <Badge size="xs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>
+                    {device.online && !device.paused && (
                         <Badge size="xs" color={ollama.available ? 'success' : 'error'}>
                             {ollama.available ? `Ollama ${ollama.version}` : 'Ollama is not running'}
                         </Badge>
                     )}
-                    {here && device.online && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
+                    {here && device.online && !device.paused && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
+                    {device.kind !== 'local' && (device.online || device.paused) && (
+                        <Button size="xs" color="secondary" onClick={() => onPause(device)}>
+                            <Icon name={device.paused ? 'FiPlay' : 'FiPause'} size="xs" />{device.paused ? 'Resume' : 'Pause'}
+                        </Button>
+                    )}
                     {device.kind !== 'local' && !here && <Button size="xs" color="error" onClick={() => onRemove(device)}><Icon name="FiTrash2" size="xs" />Remove</Button>}
                     {device.edited && <Badge size="xs" color="warning">Corrected by hand</Badge>}
                 </Container>
@@ -154,7 +160,8 @@ const DeviceCard = ({ device, canManage, onChanged, onRemove, here, onSetUp }) =
             <Typography size="xxs" color="muted">
                 {device.kind === 'local' ? 'The computer Mollama is running on.' : 'Linked through the Mollama desktop app.'}
                 {!device.online && ' Open the Mollama desktop app on it to bring it online, or remove it if that computer is no longer yours to use.'}
-                {device.online && !ollama.available && (here ? ' Ollama is not running here. Set up Ollama installs it if needed and starts it.' : ' Start Ollama on that computer, or open Mollama on it and choose Set up Ollama.')}
+                {device.paused && ' Paused: it stays connected but is given no work, and its models are out of memory, until you resume it.'}
+                {device.online && !device.paused && !ollama.available && (here ? ' Ollama is not running here. Set up Ollama installs it if needed and starts it.' : ' Start Ollama on that computer, or open Mollama on it and choose Set up Ollama.')}
             </Typography>
 
             {!editing && (
@@ -251,6 +258,19 @@ const DevicesPage = () => {
         return () => window.removeEventListener('ollama-availability-changed', load);
     }, [load]);
 
+    // A paused computer stays connected but is given no work, and its loaded models are taken out of memory.
+    const pauseDevice = async (device) => {
+        try {
+            if (device.paused) await deviceService.resumeDevice(device.id);
+            else await deviceService.pauseDevice(device.id);
+            success(device.paused ? `${device.name} is back in use.` : `${device.name} is paused. Its models are out of memory and it will not be given work until you resume it.`);
+            window.dispatchEvent(new CustomEvent('ollama-status-changed'));
+            load();
+        } catch (error) {
+            notifyError(describeError(error, 'The computer could not be changed.'));
+        }
+    };
+
     const removeDevice = async (device) => {
         const now = device.online ? ' It is connected right now and will be disconnected.' : '';
         if (!(await confirm(`Remove ${device.name} from your account?${now} It comes back if someone signs in to Mollama on it again.`, { confirmLabel: 'Remove', color: 'error' }))) return;
@@ -318,7 +338,7 @@ const DevicesPage = () => {
 
                 <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
                     {devices?.map((device) => (
-                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} onRemove={removeDevice} here={device.id === here} onSetUp={setUpOllama} />
+                        <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} onRemove={removeDevice} onPause={pauseDevice} here={device.id === here} onSetUp={setUpOllama} />
                     ))}
 
 

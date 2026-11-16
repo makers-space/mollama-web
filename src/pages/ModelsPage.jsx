@@ -933,7 +933,9 @@ const ModelsPage = () => {
                         {devices.map((entry) => (
                             <Button key={entry.id} size="sm" color={entry.id === deviceId ? 'primary' : 'secondary'} selected={entry.id === deviceId} onClick={() => setDevice(entry)}>
                                 <Icon name="FiMonitor" size="xs" />{entry.name}
-                                <Badge size="xs" color={entry.online ? 'success' : 'default'}>{entry.online ? 'Online' : 'Offline'}</Badge>
+                                {deviceService.ready(entry)
+                                    ? <Icon name="FiCheckCircle" size="xs" color="success" title="Ready to use right now" aria-label="Ready to use right now" />
+                                    : <Badge size="xs" color={entry.paused ? 'warning' : entry.online ? 'success' : 'default'}>{entry.paused ? 'Paused' : entry.online ? 'Online' : 'Offline'}</Badge>}
                             </Button>
                         ))}
                     </Container>
@@ -976,6 +978,9 @@ const ModelsPage = () => {
                 )}
                 {device && !device.online && (
                     <Empty icon="FiMonitor" title={`${device.name} is offline`} text="Open the Mollama desktop app on that computer to see and manage its models." />
+                )}
+                {device?.online && device.paused && (
+                    <Empty icon="FiPause" title={`${device.name} is paused`} text="Resume it on the Devices page to see and manage its models." />
                 )}
                 {device?.online && tab === 'discover' && (
                     <DiscoverTab

@@ -11,6 +11,7 @@ import {
 } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
 import { chatService, deviceService, fileService, modelService, promptService, describeError, downloadText, useGuide } from '../client/ai.client';
+import { appService } from '../client/app.client';
 
 const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error' };
 const FIRST_MESSAGE = 'Explain what you can help me with in three sentences.';
@@ -1247,6 +1248,13 @@ const ChatPage = () => {
     const turnRef = useRef(null);
     const bottomRef = useRef(null);
     const followRef = useRef(true);
+    const idleLive = () => ({ chatId: null, target: null, joined: false, seq: 0, syncing: false, buffer: [], lastAt: 0 });
+    const liveRef = useRef(idleLive());
+    const streamingRef = useRef(null);
+    const chatRef = useRef(null);
+    const pieceRef = useRef(null);
+    const syncRef = useRef(null);
+    chatRef.current = chat;
     const fileInputRef = useRef(null);
     const busy = Boolean(live);
 
@@ -1448,12 +1456,126 @@ const ChatPage = () => {
         if (event.type === 'toolFailed') setLive((now) => now && { ...now, steps: (now.steps || []).map((step, index, all) => (index === all.length - 1 ? { ...step, failed: event.failed } : step)) });
     };
 
+    // Replies travel on the live connection, each piece numbered, so every app this person has open follows the same
+    // reply. A missed piece, or joining part-way, is caught up from the server's copy of what has been sent so far.
+    const stopFollowing = () => {
+        liveRef.current = idleLive();
+    };
+    const followLive = (target, state) => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        followRef.current = true;
+        turnRef.current = target.id;
+        liveRef.current = { ...idleLive(), chatId: target.id, target, joined: Boolean(state.joined), lastAt: Date.now() };
+        setLive(state);
+    };
+    const applyPiece = (follow, event) => {
+        if (event.type === 'end') {
+            stopFollowing();
+            settle(follow.target);
+            return;
+        }
+        if (event.type === 'accepted' && follow.joined) {
+            chatService.get(follow.chatId).then((result) => turnRef.current === follow.chatId && setChat(result.chat)).catch(() => {});
+        }
+        applyEvent(event);
+    };
+    const syncLive = async () => {
+        const follow = liveRef.current;
+        if (!follow.chatId || follow.syncing) return;
+        follow.syncing = true;
+        let snapshot = null;
+        try {
+            snapshot = await chatService.live(follow.chatId);
+        } catch {
+            snapshot = null;
+        }
+        if (liveRef.current !== follow) return;
+        follow.syncing = false;
+        follow.lastAt = Date.now();
+        if (!snapshot) return;
+        if (!snapshot.replying) {
+            stopFollowing();
+            settle(follow.target);
+            return;
+        }
+        setLive((now) => now && { ...now, content: '', thinking: '', steps: [], note: undefined, started: false, ahead: null });
+        snapshot.events.forEach((event) => applyPiece(follow, event));
+        follow.seq = snapshot.seq;
+        const waiting = follow.buffer.filter((piece) => piece.seq > follow.seq).sort((a, b) => a.seq - b.seq);
+        follow.buffer = [];
+        waiting.forEach((piece) => pieceRef.current?.(piece));
+    };
+    syncRef.current = syncLive;
+    pieceRef.current = (piece) => {
+        if (!piece?.chatId || streamingRef.current === piece.chatId) return;
+        const follow = liveRef.current;
+        if (follow.chatId !== piece.chatId) {
+            // Another of this person's apps started a reply in the chat that is open here.
+            const open = chatRef.current;
+            if (open?.id === piece.chatId && piece.event.type !== 'end') {
+                followLive(open, { joined: true, content: '', thinking: '', ahead: null, started: false });
+                syncLive();
+            }
+            return;
+        }
+        follow.lastAt = Date.now();
+        if (follow.syncing) {
+            follow.buffer.push(piece);
+            return;
+        }
+        if (piece.seq <= follow.seq) return;
+        if (piece.seq !== follow.seq + 1) {
+            follow.buffer.push(piece);
+            syncLive();
+            return;
+        }
+        follow.seq = piece.seq;
+        applyPiece(follow, piece.event);
+    };
+
+    useEffect(() => appService.onNotification('chat:reply', (piece) => pieceRef.current?.(piece)), []);
+
+    // If the live connection goes quiet in the middle of a reply, the server is asked where the reply has got to.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            const follow = liveRef.current;
+            if (follow.chatId && !follow.syncing && Date.now() - follow.lastAt > 6000) syncRef.current?.();
+        }, 3000);
+        return () => clearInterval(timer);
+    }, []);
+
     const runTurn = async (target, body, shownText) => {
+        const state = { userText: shownText, editIndex: body.editIndex, regenerate: Boolean(body.regenerate), content: '', thinking: '', ahead: null, started: false };
+        if (appService.notificationsConnected()) {
+            followLive(target, state);
+            try {
+                const result = await chatService.send(target.id, { ...body, live: true }, { onEvent: applyEvent });
+                if (result?.started) return;
+                stopFollowing();
+                settle(target);
+                return;
+            } catch (error) {
+                stopFollowing();
+                const refusedLive = error.response?.status === 400 && /live/i.test(error.response.data?.message || '');
+                if (!refusedLive && error.response) {
+                    notifyError(describeError(error, 'The message could not be sent.'));
+                    if (shownText && !body.regenerate && body.editIndex === undefined) setText(shownText);
+                    settle(target);
+                    return;
+                }
+                if (!refusedLive) {
+                    joinReply(target);
+                    return;
+                }
+            }
+        }
         followRef.current = true;
         const controller = new AbortController();
         abortRef.current = controller;
         turnRef.current = target.id;
-        setLive({ userText: shownText, editIndex: body.editIndex, regenerate: Boolean(body.regenerate), content: '', thinking: '', ahead: null, started: false });
+        streamingRef.current = target.id;
+        setLive(state);
         let failure = null;
         try {
             await chatService.send(target.id, body, {
@@ -1463,6 +1585,7 @@ const ChatPage = () => {
         } catch (error) {
             if (error.name !== 'AbortError') failure = error;
         }
+        streamingRef.current = null;
         abortRef.current = null;
 
         if (failure?.response) {
@@ -1495,6 +1618,11 @@ const ChatPage = () => {
     };
 
     const joinReply = async (target) => {
+        if (appService.notificationsConnected()) {
+            followLive(target, { joined: true, content: '', thinking: '', ahead: null, started: false });
+            syncLive();
+            return;
+        }
         abortRef.current?.abort();
         followRef.current = true;
         const controller = new AbortController();
@@ -1550,6 +1678,8 @@ const ChatPage = () => {
     const leave = () => {
         abortRef.current?.abort();
         abortRef.current = null;
+        streamingRef.current = null;
+        stopFollowing();
         turnRef.current = null;
         setLive(null);
         loadChats(search);
@@ -2031,8 +2161,10 @@ const ChatPage = () => {
                             {devices.length > 1 && (
                                 <Pop label={devices.find((device) => device.id === currentDevice)?.name || 'Computer'} icon="FiMonitor" iconEnd size="xs" open={pop === 'device'} onOpen={() => openPop('device')} onClose={closePop} width="330px">
                                     {devices.map((device) => (
-                                        <Row key={device.id} icon="FiMonitor" label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online} onClick={() => changeDevice(device.id)}>
-                                            <Badge size="xxs" color={device.online ? 'success' : 'default'}>{device.online ? 'Online' : 'Offline'}</Badge>
+                                        <Row key={device.id} icon="FiMonitor" label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online || device.paused} onClick={() => changeDevice(device.id)}>
+                                            {deviceService.ready(device)
+                                                ? <Icon name="FiCheckCircle" size="xs" color="success" title="Ready to use right now" aria-label="Ready to use right now" />
+                                                : <Badge size="xxs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>}
                                         </Row>
                                     ))}
                                 </Pop>
@@ -2042,7 +2174,7 @@ const ChatPage = () => {
                                 {models.map((model) => (
                                     <Row key={model.name} label={model.displayName} size="xs" selected={model.name === currentModel} onClick={() => changeModel(model.name)}>
                                         <Badge size="xxs" color={FIT_COLORS[model.fit?.verdict] || 'tertiary'}>{model.fit?.label || 'Fit unknown'}</Badge>
-                                        {model.ready && <Badge size="xxs" color="success">Ready now</Badge>}
+                                        {model.ready && <Icon name="FiCheckCircle" size="xs" color="success" title="Loaded and ready to use right now" aria-label="Loaded and ready to use right now" />}
                                     </Row>
                                 ))}
                             </Pop>

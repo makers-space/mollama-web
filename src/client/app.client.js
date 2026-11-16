@@ -392,6 +392,11 @@ export const appService = {
         notificationClient.disconnect();
     },
 
+    // Whether the live connection to the server is open right now.
+    notificationsConnected() {
+        return Boolean(notificationClient.ws && notificationClient.ws.readyState === WebSocket.OPEN);
+    },
+
     /**
      * Notices the server kept for this person, newest first, with the number not yet read.
      */
