@@ -210,15 +210,75 @@ export const deviceService = {
 
 // The desktop app's installers are published as releases of a public repository; this reads which ones exist.
 const INSTALLERS = 'makers-space/mollama-installers';
+// What the pickers showed last, kept so they can be drawn at once and corrected when the fresh answer arrives.
+const readKept = (key, fallback) => {
+    try {
+        return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+        return fallback;
+    }
+};
+const keep = (key, value) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        return;
+    }
+};
+// Kept per account, so one person never sees another's computers or models on a shared browser.
+let pickerOwner = null;
+let keptModels = new Map();
+const PICKER_KEYS = ['mollama-picker-devices', 'mollama-picker-models', 'mollama-picker-choice'];
+export const pickerMemory = {
+    as(userId) {
+        const owner = userId ? String(userId) : null;
+        if (owner === pickerOwner) return;
+        pickerOwner = owner;
+        try {
+            if (localStorage.getItem('mollama-picker-owner') !== owner) {
+                PICKER_KEYS.forEach((key) => localStorage.removeItem(key));
+                if (owner) localStorage.setItem('mollama-picker-owner', owner);
+                else localStorage.removeItem('mollama-picker-owner');
+            }
+        } catch {
+            keptModels = new Map();
+            return;
+        }
+        keptModels = new Map(Object.entries(readKept('mollama-picker-models', {})));
+    },
+    devices: () => (pickerOwner ? readKept('mollama-picker-devices', { devices: [], current: null }) : { devices: [], current: null }),
+    keepDevices(devices, current) {
+        if (!pickerOwner) return;
+        keep('mollama-picker-devices', {
+            current: current || null,
+            devices: devices.map(({ id, name, kind, online, paused, ollama }) => ({ id, name, kind, online, paused, ollama: { available: Boolean(ollama?.available), modelCount: ollama?.modelCount || 0 } }))
+        });
+    },
+    models: (deviceId) => keptModels.get(String(deviceId || 'default')) || null,
+    // The model last used on a computer, so a new chat names it at once.
+    choice: (deviceId) => (pickerOwner ? readKept('mollama-picker-choice', {})[String(deviceId || 'default')] || null : null),
+    keepChoice(deviceId, model) {
+        if (!pickerOwner || !model) return;
+        keep('mollama-picker-choice', { ...readKept('mollama-picker-choice', {}), [String(deviceId || 'default')]: model });
+    },
+    keepModels(deviceId, models) {
+        if (!pickerOwner) return;
+        keptModels.set(String(deviceId || 'default'), models.map(({ name, displayName, fit, ready, canChat }) => ({ name, displayName, fit, ready, canChat })));
+        keep('mollama-picker-models', Object.fromEntries(keptModels));
+    }
+};
+
 export const desktopService = {
     systems: [
         { id: 'windows', label: 'Windows', icon: 'FaWindows', ending: '-Setup.exe' },
         { id: 'mac', label: 'macOS', icon: 'FaApple', ending: '.dmg' },
         { id: 'linux', label: 'Linux', icon: 'FaLinux', ending: '.AppImage' }
     ],
-    // Only the released app is offered for download; the staging build is still published for testers who ask for it.
+    // Each site offers the build that opens it: the staging site the staging app, every other address the released app.
     channels() {
-        return [{ id: 'production', name: 'Mollama', title: 'Mollama', opens: 'Opens www.mollama.one' }];
+        return window.location.hostname.startsWith('staging.')
+            ? [{ id: 'staging', name: 'Mollama-Staging', title: 'Mollama Staging', opens: 'Opens staging.mollama.one, for testing' }]
+            : [{ id: 'production', name: 'Mollama', title: 'Mollama', opens: 'Opens www.mollama.one' }];
     },
     address: (file) => `https://github.com/${INSTALLERS}/releases/latest/download/${file}`,
     async published() {

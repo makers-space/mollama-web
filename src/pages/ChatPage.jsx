@@ -10,7 +10,8 @@ import {
     ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor
 } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { chatService, deviceService, fileService, modelService, promptService, describeError, downloadText, useGuide } from '../client/ai.client';
+import { useAuth } from '@contexts/AuthContext';
+import { chatService, deviceService, fileService, modelService, promptService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
 import { appService } from '../client/app.client';
 
 const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error' };
@@ -1212,10 +1213,28 @@ const ChatPage = () => {
     const [chats, setChats] = useState([]);
     const [search, setSearch] = useState('');
     const [chat, setChat] = useState(null);
-    const [models, setModels] = useState([]);
-    const [modelsLoaded, setModelsLoaded] = useState(false);
-    const [devices, setDevices] = useState([]);
-    const [draftDevice, setDraftDevice] = useState(null);
+    const { user: signedIn } = useAuth();
+    pickerMemory.as(signedIn?.id || signedIn?._id);
+    // The pickers open with what they showed last, so a name is there at once; the fresh answer then corrects it.
+    const preferDevice = (list, current) => {
+        const ready = list.filter((device) => deviceService.ready(device) || (device.online && !device.paused && device.ollama?.available));
+        const usable = list.filter((device) => device.online && !device.paused);
+        return (ready.find((device) => device.id === deviceService.chosen())
+            || ready.find((device) => device.id === current)
+            || ready[0]
+            || usable.find((device) => device.id === deviceService.chosen())
+            || usable.find((device) => device.id === current)
+            || usable[0])?.id || null;
+    };
+    const [devices, setDevices] = useState(() => pickerMemory.devices().devices);
+    const [draftDevice, setDraftDevice] = useState(() => {
+        const kept = pickerMemory.devices();
+        return preferDevice(kept.devices, kept.current);
+    });
+    // The list of models is kept together with the computer it belongs to, so the two can never be out of step.
+    const keptModels = (deviceId) => (pickerMemory.models(deviceId) || []).filter((model) => model.canChat !== false);
+    const [modelState, setModelState] = useState(() => ({ device: draftDevice, list: keptModels(draftDevice), loaded: Boolean(pickerMemory.models(draftDevice)) }));
+    const modelsAsk = useRef(0);
     const [webSearch, setWebSearch] = useState(false);
     const [draftSearch, setDraftSearch] = useState(true);
     const [skills, setSkills] = useState([]);
@@ -1239,7 +1258,11 @@ const ChatPage = () => {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [working, setWorking] = useState(null);
     const [draftSetup, setDraftSetup] = useState(emptySetup);
-    const [draftModel, setDraftModel] = useState(null);
+    const rememberedModel = (deviceId) => {
+        const name = pickerMemory.choice(deviceId);
+        return name && (pickerMemory.models(deviceId) || []).some((model) => model.name === name) ? name : null;
+    };
+    const [draftModel, setDraftModel] = useState(() => rememberedModel(draftDevice));
     const [draftTitle, setDraftTitle] = useState('');
     const [exportFile, setExportFile] = useState(null);
     const [wide, setWide] = useState(() => window.innerWidth > 900);
@@ -1281,21 +1304,24 @@ const ChatPage = () => {
 
     // The computer this chat runs on. With none chosen the server picks one.
     const currentDevice = chat?.device || draftDevice || null;
+    // While the list for the computer in use is on its way, what was last seen on that same computer is shown.
+    const models = useMemo(() => (modelState.device === currentDevice ? modelState.list : keptModels(currentDevice)), [modelState, currentDevice]);
+    const modelsLoaded = modelState.device === currentDevice ? modelState.loaded : Boolean(pickerMemory.models(currentDevice));
 
     const loadDevices = useCallback(() => {
         deviceService.listDevices()
             .then((result) => {
                 setDevices(result.devices);
-                const ready = result.devices.filter((device) => device.online && device.ollama?.available);
-                const preferred = ready.find((device) => device.id === deviceService.chosen())
-                    || ready.find((device) => device.id === result.current)
-                    || ready[0]
-                    || result.devices.find((device) => device.id === deviceService.chosen() && device.online)
-                    || result.devices.find((device) => device.id === result.current && device.online)
-                    || result.devices.find((device) => device.online);
-                setDraftDevice((now) => now || preferred?.id || null);
+                pickerMemory.keepDevices(result.devices, result.current);
+                const preferred = preferDevice(result.devices, result.current);
+                // A remembered choice is kept while that computer can still be used; otherwise the best one takes its place.
+                setDraftDevice((now) => (now && result.devices.some((device) => device.id === now && device.online && !device.paused) ? now : preferred));
+                // The other computers' models are fetched quietly, so switching to one shows its models at once.
+                result.devices
+                    .filter((device) => deviceService.ready(device))
+                    .forEach((device) => modelService.installedOn(device.id).then((answer) => pickerMemory.keepModels(device.id, answer.models)).catch(() => {}));
             })
-            .catch(() => setDevices([]));
+            .catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -1307,16 +1333,21 @@ const ChatPage = () => {
         return () => chatService.on(null);
     }, [currentDevice]);
 
+    // The list always belongs to the computer in use: what was last seen on it is shown at once, never another
+    // computer's models, and an answer that arrives after the person has moved on is dropped.
     const loadModels = useCallback(async () => {
+        const ask = ++modelsAsk.current;
+        const kept = pickerMemory.models(currentDevice);
+        setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: Boolean(kept) });
         try {
-            setModelsLoaded(false);
             const result = await modelService.installedOn(currentDevice);
-            setModels(result.models.filter((model) => model.canChat !== false));
+            pickerMemory.keepModels(currentDevice, result.models);
+            if (ask !== modelsAsk.current) return;
+            setModelState({ device: currentDevice, list: result.models.filter((model) => model.canChat !== false), loaded: true });
             if ('webSearch' in result) setWebSearch(Boolean(result.webSearch));
         } catch {
-            setModels([]);
-        } finally {
-            setModelsLoaded(true);
+            if (ask !== modelsAsk.current) return;
+            setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: true });
         }
     }, [currentDevice]);
 
@@ -1359,6 +1390,16 @@ const ChatPage = () => {
 
     const currentModel = chat?.model || draftModel;
 
+    // A new chat names a model as soon as the computer's models are known: one already in memory if there is one.
+    // It is only a first guess, so the server's own choice replaces it when that arrives.
+    const guessRef = useRef(null);
+    useEffect(() => {
+        if (chat || currentModel || models.length === 0) return;
+        const guess = (models.find((model) => model.ready) || models[0]).name;
+        guessRef.current = guess;
+        setDraftModel(guess);
+    }, [chat?.id, currentModel, models]);
+
     // After moving to another computer, a model that is not on it is swapped for one that is.
     useEffect(() => {
         if (!modelsLoaded || models.length === 0 || !currentModel || models.some((model) => model.name === currentModel)) return;
@@ -1371,20 +1412,31 @@ const ChatPage = () => {
         deviceService.choose(id);
         if (!chat) {
             setDraftDevice(id);
+            setDraftModel(rememberedModel(id));
             return;
         }
+        // The picker changes at once; the server is told behind it, and the old choice comes back if it refuses.
+        const before = chat.device;
+        setChat((now) => now && { ...now, device: id });
         try {
-            setChat((await chatService.update(chat.id, { device: id })).chat);
+            const saved = (await chatService.update(chat.id, { device: id })).chat;
+            setChat((now) => (now && now.id === saved.id && now.device === id ? saved : now));
         } catch (error) {
+            setChat((now) => (now && now.device === id ? { ...now, device: before } : now));
             notifyError(describeError(error, 'The computer could not be changed.'));
         }
     };
 
     useEffect(() => {
         if (!modelsLoaded || models.length === 0) return;
-        modelService.loadModel(currentModel || null)
+        const guessed = !chat && Boolean(currentModel) && guessRef.current === currentModel;
+        modelService.loadModel(guessed ? null : currentModel || null)
             .then((result) => {
-                if (!currentModel && result.model) setDraftModel(result.model);
+                if (result.model) pickerMemory.keepChoice(currentDevice, result.model);
+                if ((!currentModel || guessed) && result.model && guessRef.current === (guessed ? currentModel : guessRef.current)) {
+                    guessRef.current = null;
+                    setDraftModel(result.model);
+                }
             })
             .catch(() => {});
     }, [modelsLoaded, models.length, currentModel]);
@@ -1794,13 +1846,19 @@ const ChatPage = () => {
 
     const changeModel = async (name) => {
         closePop();
+        pickerMemory.keepChoice(currentDevice, name);
+        guessRef.current = null;
         if (!chat) {
             setDraftModel(name);
             return;
         }
+        const before = chat.model;
+        setChat((now) => now && { ...now, model: name });
         try {
-            setChat((await chatService.update(chat.id, { model: name })).chat);
+            const saved = (await chatService.update(chat.id, { model: name })).chat;
+            setChat((now) => (now && now.id === saved.id && now.model === name ? saved : now));
         } catch (error) {
+            setChat((now) => (now && now.model === name ? { ...now, model: before } : now));
             notifyError(describeError(error, 'The model could not be changed.'));
         }
     };
@@ -1899,7 +1957,7 @@ const ChatPage = () => {
     const context = chat?.context;
     const pending = live ? [] : chat?.pendingAttachments || [];
     const noModels = modelsLoaded && models.length === 0;
-    const modelLabel = models.find((model) => model.name === currentModel)?.displayName || currentModel || 'Model';
+    const modelLabel = models.find((model) => model.name === currentModel)?.displayName || (!modelsLoaded ? 'Loading models…' : currentModel || 'Model');
     const articles = draftSetup.instructions;
     const articlesFull = articles.length >= MAX_ARTICLES;
 
@@ -2213,7 +2271,7 @@ const ChatPage = () => {
                                 </Pop>
                             )}
                             <Pop label={modelLabel} icon="FiCpu" iconEnd size="xs" open={pop === 'model'} onOpen={() => openPop('model')} onClose={closePop} width="330px">
-                                {models.length === 0 && <Typography size="xs" color="muted">No model is installed yet.</Typography>}
+                                {models.length === 0 && <Typography size="xs" color="muted">{modelsLoaded ? 'No model is installed yet.' : 'Loading the models on this computer…'}</Typography>}
                                 {models.map((model) => (
                                     <Row key={model.name} label={model.displayName} size="xs" selected={model.name === currentModel} onClick={() => changeModel(model.name)}>
                                         <Badge size="xxs" color={FIT_COLORS[model.fit?.verdict] || 'tertiary'}>{model.fit?.label || 'Fit unknown'}</Badge>
