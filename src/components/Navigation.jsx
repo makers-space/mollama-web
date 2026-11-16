@@ -1,8 +1,24 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
-import { Badge, Button, CircularProgress, Container, FloatingActionButton, Icon, Page, Typography } from './Components';
+import { Badge, Button, CircularProgress, Container, FloatingActionButton, Icon, Page, ProgressBar, Typography } from './Components';
 import { useGuide, useActivity } from '../client/ai.client';
+
+// What is running, said with the colour that matches its state: starting and running use the tertiary colour, a wait is amber, a failure is red and a finished job is green.
+const REPLY_STATES = {
+    waiting: { label: 'Waiting', color: 'warning', text: (reply) => (reply.ahead ? `${reply.ahead} ahead in line` : 'Waiting for its turn') },
+    starting: { label: 'Starting', color: 'tertiary', text: () => 'Getting the model ready' },
+    searching: { label: 'Searching', color: 'tertiary', text: () => 'Searching the web' },
+    reading: { label: 'Reading', color: 'tertiary', text: () => 'Reading a page' },
+    thinking: { label: 'Thinking', color: 'tertiary', text: () => 'Thinking it through' },
+    writing: { label: 'Writing', color: 'tertiary', text: (reply) => `${reply.words} ${reply.words === 1 ? 'word' : 'words'} so far` }
+};
+const DOWNLOAD_STATES = {
+    queued: { label: 'Waiting', color: 'warning', text: () => 'Waiting to download' },
+    downloading: { label: 'Downloading', color: 'tertiary', text: (job) => `Downloading, ${job.percent}% done` },
+    completed: { label: 'Done', color: 'success', text: () => 'Downloaded and ready to use' },
+    failed: { label: 'Failed', color: 'error', text: () => 'The download did not finish' }
+};
 
 const LOADING_MESSAGES = [
     'Loading page',
@@ -188,6 +204,14 @@ export const Navigation = ({
     const guide = useGuide();
     const activity = useActivity();
     const busyCount = activity.replies.length + activity.downloads.length;
+    const finished = activity.finished || [];
+    // One colour says how things stand overall: a failure is red, a wait is amber, work under way is tertiary, all finished is green.
+    const runningColor = finished.some((job) => job.status === 'failed')
+        ? 'error'
+        : activity.replies.some((reply) => reply.phase === 'waiting') || activity.downloads.some((job) => job.status === 'queued')
+            ? 'warning'
+            : busyCount > 0 ? 'tertiary' : 'success';
+    const runningCount = busyCount > 0 ? busyCount : finished.length;
 
     const handleNavigation = (path) => {
         setIsNavigating(true);
@@ -305,27 +329,50 @@ export const Navigation = ({
                     })}
                 </Container>
             </Container>
-            {busyCount > 0 && (
+            {busyCount + finished.length > 0 && (
                 <Container layout="flex-column" gap="xs" width="100%">
-                    <Typography as="p" size="xs" weight="medium">RUNNING NOW</Typography>
-                    {activity.replies.map((reply) => (
-                        <Container key={reply.chatId} layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                                <Typography size="xs" weight="medium" truncate>{reply.title}</Typography>
-                                <Typography size="xxs" color="muted" truncate>{reply.model} is replying{reply.waiting ? `, ${reply.waiting} more waiting` : ''}</Typography>
+                    <Container layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%" wrap={false}>
+                        <Typography as="p" size="xs" weight="medium">RUNNING NOW</Typography>
+                        <Badge size="xs" color={runningColor}>{runningCount}</Badge>
+                    </Container>
+                    {activity.replies.map((reply) => {
+                        const state = REPLY_STATES[reply.phase] || REPLY_STATES.starting;
+                        return (
+                            <Container key={reply.chatId} layout="flex-column" gap="none" padding="none" width="100%">
+                                <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                    <Container padding="none" flexFill minWidth="0">
+                                        <Typography size="xs" weight="medium" truncate>{reply.title}</Typography>
+                                    </Container>
+                                    <Button size="xs" color="secondary" title="Open this chat" aria-label={`Open ${reply.title}`} onClick={() => handleNavigation(`/chat/${reply.chatId}`)}>
+                                        <Icon name="FiArrowRight" size="xs" />Open
+                                    </Button>
+                                    <Button size="xs" color="error" onClick={() => activity.stopReply(reply.chatId)}>Stop</Button>
+                                </Container>
+                                <Typography size="xxs" color={state.color} truncate>
+                                    {[reply.model, state.text(reply), reply.waiting ? `${reply.waiting} more waiting` : null].filter(Boolean).join(' · ')}
+                                </Typography>
                             </Container>
-                            <Button size="xs" color="error" onClick={() => activity.stopReply(reply.chatId)}>Stop</Button>
-                        </Container>
-                    ))}
-                    {activity.downloads.map((job) => (
-                        <Container key={job.id} layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                                <Typography size="xs" weight="medium" truncate>{job.model}</Typography>
-                                <Typography size="xxs" color="muted">{job.status === 'queued' ? 'Waiting to download' : `Downloading, ${job.percent}%`}</Typography>
+                        );
+                    })}
+                    {[...activity.downloads, ...finished].map((job) => {
+                        const state = DOWNLOAD_STATES[job.status] || DOWNLOAD_STATES.downloading;
+                        const active = job.status === 'queued' || job.status === 'downloading';
+                        return (
+                            <Container key={job.id} layout="flex-column" gap="none" padding="none" width="100%">
+                                <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                    <Container padding="none" flexFill minWidth="0">
+                                        <Typography size="xs" weight="medium" truncate>{job.model}</Typography>
+                                    </Container>
+                                    <Button size="xs" color="secondary" title="Open the Models page" aria-label={`Open ${job.model} on the Models page`} onClick={() => handleNavigation('/models')}>
+                                        <Icon name="FiArrowRight" size="xs" />Open
+                                    </Button>
+                                    {active && activity.canManage && <Button size="xs" color="secondary" onClick={() => activity.cancelDownload(job.id)}>Cancel</Button>}
+                                </Container>
+                                <Typography size="xxs" color={state.color} truncate>{state.text(job)}</Typography>
+                                {active && <ProgressBar value={job.percent || 0} size="sm" width="100%" color={state.color} animated={job.status === 'downloading'} />}
                             </Container>
-                            {activity.canManage && <Button size="xs" color="secondary" onClick={() => activity.cancelDownload(job.id)}>Cancel</Button>}
-                        </Container>
-                    ))}
+                        );
+                    })}
                 </Container>
             )}
 
@@ -380,8 +427,8 @@ export const Navigation = ({
             position={position}
             draggable={draggable}
             icon={isNavigating ? 'FiLoader' : 'FiMap'}
-            badge={busyCount > 0 ? String(busyCount) : null}
-            badgeColor="secondary"
+            badge={busyCount + finished.length > 0 ? String(runningCount) : null}
+            badgeColor={runningColor}
             theme={theme}
             disabled={isNavigating}
             genie={{

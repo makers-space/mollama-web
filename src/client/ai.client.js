@@ -26,7 +26,7 @@ export const GUIDE_TEXT = {
     'devices.correct': ['Correct these details', 'Use this only when what Mollama reads is wrong. It changes which models are said to fit.']
 };
 
-const NO_ACTIVITY = { replies: [], downloads: [], canManage: false };
+const NO_ACTIVITY = { replies: [], downloads: [], finished: [], canManage: false };
 const ActivityContext = createContext({ ...NO_ACTIVITY, refresh: async () => {}, stopReply: async () => {}, cancelDownload: async () => {} });
 export const useActivity = () => useContext(ActivityContext);
 
@@ -41,6 +41,7 @@ export const ActivityProvider = ({ children }) => {
             setActivity({
                 replies: result.replies,
                 downloads: result.downloads.filter((job) => job.status === 'queued' || job.status === 'downloading'),
+                finished: result.downloads.filter((job) => job.status === 'completed' || job.status === 'failed'),
                 canManage: Boolean(result.permissions?.manage)
             });
         } catch {
@@ -70,6 +71,16 @@ export const ActivityProvider = ({ children }) => {
             clearInterval(timer);
         };
     }, [userId, refresh]);
+
+    // While something is running its progress is read every few seconds; otherwise once a minute is enough.
+    const busy = activity.replies.length + activity.downloads.length > 0;
+    useEffect(() => {
+        if (!userId || !busy) return undefined;
+        const timer = setInterval(() => {
+            if (!document.hidden) refresh();
+        }, 3000);
+        return () => clearInterval(timer);
+    }, [userId, busy, refresh]);
 
     const stopReply = useCallback(async (chatId) => {
         await api.post(`/chats/${chatId}/stop`, {}).catch(() => {});
@@ -292,7 +303,7 @@ export const modelService = {
 
     getDeviceCatalogue: (deviceId, query = {}) => api.get(`/devices/${deviceId}/catalogue`, { params: query }),
     // A server that is one version behind does not know "sample" yet; it is then asked the older way and the page trims the list itself.
-    getPublicCatalogue: (memoryMb, gpuMemoryMb) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb, sample: true } })
+    getPublicCatalogue: (memoryMb, gpuMemoryMb, shared = false) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb, sample: true, ...(shared ? { shared: true } : {}) } })
         .catch((error) => (error?.response?.status === 400 ? api.get('/catalogue', { params: { memoryMb, gpuMemoryMb } }) : Promise.reject(error))),
 
     startDownload: (name) => api.post('/models/pull', { name }, onViewed()),

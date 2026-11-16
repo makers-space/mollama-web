@@ -145,6 +145,7 @@ const Band = ({ children, width = '1120px', ...rest }) => (
 
 const GRAPHICS_CARDS = [
     { value: 'none', label: 'No graphics card', gb: 0 },
+    { value: 'shared', label: 'Graphics share the system memory (Apple M1 to M4 chips)', gb: 'shared' },
     { value: '4', label: '4 GB card (GTX 1650, RTX 3050 4GB)', gb: 4 },
     { value: '6', label: '6 GB card (RTX 2060, RTX 3050 6GB)', gb: 6 },
     { value: '8', label: '8 GB card (RTX 3060 Ti, 4060, 4060 Ti, RX 7600)', gb: 8 },
@@ -154,6 +155,8 @@ const GRAPHICS_CARDS = [
     { value: '32', label: '32 GB card (RTX 5090)', gb: 32 },
     { value: 'other', label: 'Another card: I will type its memory', gb: null }
 ];
+// A chip that shares its memory gives the graphics about two thirds of it, the same share the desktop app reports.
+const sharedGb = (memoryGb) => Math.round(((memoryGb * 2) / 3) * 10) / 10;
 const VERDICT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error' };
 const PICKS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality' };
 const gbText = (megabytes) => `${(megabytes / 1024) >= 10 ? Math.round(megabytes / 1024) : Number((megabytes / 1024).toFixed(1))} GB`;
@@ -215,13 +218,15 @@ const SpecHelp = () => (
     </Container>
 );
 
-const SectionHead = ({ title, children, reverse = false }) => {
+const SectionHead = ({ title, children, reverse = false, side = null }) => {
     const heading = <Typography key="title" as="h2" size="lg" weight="bold" font="secondary" color="header" animation="shiny" animationDuration={4000}>{title}</Typography>;
-    const text = (
-        <Container key="text" padding="none" maxWidth="460px">
-            <Typography size="sm" color="muted">{children}</Typography>
-        </Container>
-    );
+    const text = side
+        ? <Container key="text" padding="none">{side}</Container>
+        : (
+            <Container key="text" padding="none" maxWidth="460px">
+                <Typography size="sm" color="muted">{children}</Typography>
+            </Container>
+        );
     return (
         <Container layout="flex" align="end" justify="between" gap="md" padding="none" width="100%">
             {reverse ? [text, heading] : [heading, text]}
@@ -249,7 +254,7 @@ const Calculator = ({ user }) => {
         setProblem(null);
     };
 
-    const check = useCallback(async (memoryGb, graphicsGb) => {
+    const check = useCallback(async (memoryGb, graphicsGb, shared = false) => {
         if (!Number.isFinite(memoryGb) || memoryGb < 1 || memoryGb > 2048) {
             setProblem('Enter system memory as a number of gigabytes from 1 to 2048, for example 16.');
             return;
@@ -261,7 +266,7 @@ const Calculator = ({ user }) => {
         setProblem(null);
         setBusy(true);
         try {
-            setResult(await modelService.getPublicCatalogue(Math.round(memoryGb * 1024), Math.round(graphicsGb * 1024)));
+            setResult(await modelService.getPublicCatalogue(Math.round(memoryGb * 1024), Math.round(graphicsGb * 1024), shared));
         } catch (error) {
             setProblem(describeError(error, 'The list could not be worked out. Try again.'));
         } finally {
@@ -293,17 +298,18 @@ const Calculator = ({ user }) => {
             if (!hardware?.memoryMb) return;
             const memoryGb = Math.round(hardware.memoryMb / 1024);
             const graphicsGb = hardware.hasGpu ? Math.round((hardware.gpuMemoryMb / 1024) * 10) / 10 : 0;
-            const known = GRAPHICS_CARDS.find((option) => option.gb === graphicsGb);
+            const known = hardware.gpuShared ? GRAPHICS_CARDS.find((option) => option.gb === 'shared') : GRAPHICS_CARDS.find((option) => option.gb === graphicsGb);
             setMemory(String(memoryGb));
             setCard(known ? known.value : 'other');
             setCardMemory(known ? '' : String(graphicsGb));
-            check(memoryGb, graphicsGb);
+            check(memoryGb, graphicsGb, Boolean(hardware.gpuShared));
         });
     }, [user, loadMine, check]);
 
     const submit = () => {
         const chosen = GRAPHICS_CARDS.find((option) => option.value === card);
-        check(Number(memory), chosen.gb === null ? Number(cardMemory) : chosen.gb);
+        if (chosen.gb === 'shared') return check(Number(memory), sharedGb(Number(memory)), true);
+        return check(Number(memory), chosen.gb === null ? Number(cardMemory) : chosen.gb);
     };
 
     const download = async (tag) => {
@@ -355,11 +361,7 @@ const Calculator = ({ user }) => {
 
     return (
         <Container layout="flex-column" gap="md" padding="none" width="100%">
-            <SectionHead title="Check your computer">
-                {mine?.device
-                    ? `Filled in from ${mine.device}. Change the numbers to try another machine.`
-                    : 'Enter two numbers to see which AI models your computer can run, how fast they would be, and why. No account needed.'}
-            </SectionHead>
+            <SectionHead title="Check your computer" side={<GetStarted />} />
 
             <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
                 <Container layout="grid" columns="auto" gap="sm" padding="none" width="100%" align="end">
@@ -385,9 +387,11 @@ const Calculator = ({ user }) => {
                 {problem && <Typography size="xs" color="error">{problem}</Typography>}
             </Card>
 
-            <Container layout="flex" justify="start" padding="none" width="100%">
-                <GetStarted />
-            </Container>
+            <Typography size="xs" color="muted">
+                {mine?.device
+                    ? `Filled in from ${mine.device}. Change the numbers to try another machine.`
+                    : 'Enter two numbers to see which AI models your computer can run, how fast they would be, and why. No account needed.'}
+            </Typography>
 
             {result && (
                 <>
@@ -419,10 +423,12 @@ const Calculator = ({ user }) => {
                             <Container layout="grid" columns="auto-lg" gap="sm" padding="none" width="100%" align="stretch">{tooLarge.map(modelCard)}</Container>
                         </>
                     )}
-                    <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%">
-                        <Typography size="xs" weight="semibold">
-                            {compatible} of {result.total ?? shown.length} model sizes on ollama.com are compatible with {gbText(result.hardware.memoryMb)} of memory{result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}. {user ? 'The full list is on the Models page.' : 'Sign in to see the full list.'}
-                        </Typography>
+                    <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                        <Container padding="none" flexFill minWidth="0">
+                            <Typography size="xs" weight="semibold">
+                                {compatible} of {result.total ?? shown.length} model sizes on ollama.com are compatible with {gbText(result.hardware.memoryMb)} of {result.hardware.gpuShared ? 'memory shared with the graphics' : `memory${result.hardware.gpuMemoryMb ? ` and a ${gbText(result.hardware.gpuMemoryMb)} graphics card` : ' with no graphics card'}`}.{user ? '' : ' Sign in to see the full list.'}
+                            </Typography>
+                        </Container>
                         <Button size="sm" color="primary" onClick={() => navigate(user ? '/models' : '/login')}>
                             {user ? 'See the full list' : 'Sign in'}<Icon name="FiArrowRight" size="xs" />
                         </Button>
