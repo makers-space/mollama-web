@@ -88,9 +88,11 @@ const DashboardPage = () => {
         load();
         window.addEventListener('focus', load);
         window.addEventListener('ollama-availability-changed', load);
+        window.addEventListener('mollama-chat-changed', load);
         return () => {
             window.removeEventListener('focus', load);
             window.removeEventListener('ollama-availability-changed', load);
+            window.removeEventListener('mollama-chat-changed', load);
         };
     }, [load]);
 

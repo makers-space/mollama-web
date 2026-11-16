@@ -61,6 +61,9 @@ export const ActivityProvider = ({ children }) => {
             window.dispatchEvent(new CustomEvent('ollama-status-changed'));
             window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
         });
+        // A change made in any of this person's open apps reaches the pages here, which then reload what they show.
+        const stopModels = appService.onNotification('models:changed', () => window.dispatchEvent(new CustomEvent('ollama-availability-changed')));
+        const stopChats = appService.onNotification('chat:changed', (detail) => window.dispatchEvent(new CustomEvent('mollama-chat-changed', { detail: detail || {} })));
         const timer = setInterval(() => {
             if (!document.hidden) refresh();
         }, 60000);
@@ -68,6 +71,8 @@ export const ActivityProvider = ({ children }) => {
             stopListening();
             stopDownloads();
             stopDevices();
+            stopModels();
+            stopChats();
             clearInterval(timer);
         };
     }, [userId, refresh]);

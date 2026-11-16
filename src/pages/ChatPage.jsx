@@ -1282,7 +1282,7 @@ const ChatPage = () => {
     // The computer this chat runs on. With none chosen the server picks one.
     const currentDevice = chat?.device || draftDevice || null;
 
-    useEffect(() => {
+    const loadDevices = useCallback(() => {
         deviceService.listDevices()
             .then((result) => {
                 setDevices(result.devices);
@@ -1297,6 +1297,10 @@ const ChatPage = () => {
             })
             .catch(() => setDevices([]));
     }, []);
+
+    useEffect(() => {
+        loadDevices();
+    }, [loadDevices]);
 
     useEffect(() => {
         chatService.on(currentDevice);
@@ -1535,6 +1539,45 @@ const ChatPage = () => {
     };
 
     useEffect(() => appService.onNotification('chat:reply', (piece) => pieceRef.current?.(piece)), []);
+
+    // A computer or model changed somewhere: the pickers here follow.
+    const availabilityRef = useRef(null);
+    availabilityRef.current = () => {
+        loadDevices();
+        loadModels();
+    };
+    // A chat changed in another of this person's open apps: the list follows, and so does the open chat unless a
+    // reply is being written into it here.
+    const chatChangedRef = useRef(null);
+    chatChangedRef.current = async (detail = {}) => {
+        loadChats(search);
+        const open = chatRef.current;
+        if (!open || detail.id !== open.id) return;
+        if (detail.removed) {
+            leave();
+            navigate('/chat', { replace: true });
+            return;
+        }
+        if (live) return;
+        try {
+            const next = (await chatService.get(open.id)).chat;
+            if (chatRef.current?.id !== next.id) return;
+            setChat(next);
+            if (next.replying) joinReply(next);
+        } catch {
+            return;
+        }
+    };
+    useEffect(() => {
+        const onAvailability = () => availabilityRef.current?.();
+        const onChat = (event) => chatChangedRef.current?.(event.detail);
+        window.addEventListener('ollama-availability-changed', onAvailability);
+        window.addEventListener('mollama-chat-changed', onChat);
+        return () => {
+            window.removeEventListener('ollama-availability-changed', onAvailability);
+            window.removeEventListener('mollama-chat-changed', onChat);
+        };
+    }, []);
 
     // If the live connection goes quiet in the middle of a reply, the server is asked where the reply has got to.
     useEffect(() => {
