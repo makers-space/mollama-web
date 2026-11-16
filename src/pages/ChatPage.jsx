@@ -644,7 +644,7 @@ const renderBlock = (node, context, key, parent = null) => {
     if (name === 'Data') return <Data key={key} size="xs" width="100%" variant={props.variant} data={props.data} fieldConfig={dataFields(props.fields)} />;
     if (name === 'Flow') {
         const graph = layoutFlow(props.nodes, props.edges);
-        return <Flow key={key} height={props.height || '380px'} connectable={false} deletable={false} enableNodeCreation={false} nodes={graph.nodes} edges={graph.edges} />;
+        return <Flow key={key} height={props.height || '380px'} toolbar="view" connectable={false} deletable={false} enableNodeCreation={false} nodes={graph.nodes} edges={graph.edges} />;
     }
     if (name === 'TreeView') return <TreeView key={key} size="sm" data={treeData(props.items)} />;
     if (name === 'Editor' && props.src) {

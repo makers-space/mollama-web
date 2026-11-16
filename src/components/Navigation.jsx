@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
+import { NotificationsMenu } from './AppNotifications';
 import { Badge, Button, CircularProgress, Container, FloatingActionButton, Icon, Page, ProgressBar, Typography } from './Components';
 import { useGuide, useActivity } from '../client/ai.client';
 
@@ -375,6 +376,8 @@ export const Navigation = ({
                     })}
                 </Container>
             )}
+
+            <NotificationsMenu />
 
             {/* Theme Switcher */}
             <Container layout="flex-column" gap="xs" width="100%">
