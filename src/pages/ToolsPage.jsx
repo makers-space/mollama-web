@@ -100,6 +100,7 @@ const ToolsPage = () => {
     const [adding, setAdding] = useState(null);
     const [apps, setApps] = useState([]);
     const [find, setFind] = useState('');
+    const [keyHelp, setKeyHelp] = useState(null);
     const localBridge = window.desktop?.tools || null;
 
     const replace = (server) => setServers((current) => (current || []).map((one) => (one.id === server.id ? server : one)));
@@ -203,6 +204,7 @@ const ToolsPage = () => {
             const { server } = await toolService.add({ kind: 'remote', name: remote.name.trim(), address: remote.address.trim(), ...(remote.key.trim() ? { key: remote.key.trim() } : {}) });
             setServers((current) => [...(current || []), server]);
             setRemote({ name: '', address: '', key: '' });
+            setKeyHelp(null);
         } catch (error) {
             showError(describeError(error, 'This app could not be added. Check that the address starts with https.'));
         }
@@ -211,7 +213,10 @@ const ToolsPage = () => {
 
     // One step for a listed app: add it, then go straight to its sign-in page when it asks for an account.
     const addApp = async (entry) => {
-        if (entry.signIn === 'key') return setRemote({ name: entry.name, address: entry.address, key: '' });
+        if (entry.signIn === 'key') {
+            setKeyHelp(entry);
+            return setRemote({ name: entry.name, address: entry.address, key: '' });
+        }
         setAdding(entry.address);
         const tab = entry.signIn === 'account' ? openTab() : null;
         try {
@@ -303,7 +308,23 @@ const ToolsPage = () => {
                                         <Input size="sm" label="Name" value={remote.name} onChange={(e) => setRemote((form) => ({ ...form, name: e.target.value }))} placeholder="Notion" width="100%" />
                                         <Input size="sm" label="Tool server address" value={remote.address} onChange={(e) => setRemote((form) => ({ ...form, address: e.target.value }))} placeholder="https://…" width="100%" />
                                         <Input size="sm" label="Key (only if the app gave you one)" type="password" value={remote.key} onChange={(e) => setRemote((form) => ({ ...form, key: e.target.value }))} width="100%" />
-                                        <Typography size="xxs" color="muted">The address is the MCP address from the app&apos;s own help pages. Leave the key empty to sign in with your account after adding.</Typography>
+                                        {keyHelp?.key && keyHelp.address === remote.address.trim() ? (
+                                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                                                <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                                    <Typography size="xs" weight="semibold">Getting a key for {keyHelp.name}</Typography>
+                                                    <Button size="xs" color="secondary" title="Opens in a new tab" onClick={() => window.open(keyHelp.key.page, '_blank', 'noopener')}>
+                                                        <Icon name="FiExternalLink" size="xs" />Open the key page
+                                                    </Button>
+                                                </Container>
+                                                <Typography size="xxs" color="muted">{keyHelp.key.cost}</Typography>
+                                                {keyHelp.key.steps.map((step, index) => (
+                                                    <Typography key={step} size="xs">{index + 1}. {step}</Typography>
+                                                ))}
+                                                <Typography size="xxs" color="muted">The key is stored sealed on Mollama&apos;s server and is never shown again or sent to a model.</Typography>
+                                            </Container>
+                                        ) : (
+                                            <Typography size="xxs" color="muted">The address is the MCP address from the app&apos;s own help pages. Leave the key empty to sign in with your account after adding.</Typography>
+                                        )}
                                         <Container layout="flex" justify="end" padding="none" width="100%">
                                             <Button size="sm" color="primary" disabled={adding === 'remote' || !remote.name.trim() || !/^https:\/\/\S+$/.test(remote.address.trim())} onClick={addRemote}>
                                                 <Icon name="FiPlus" size="xs" />{adding === 'remote' ? 'Adding…' : 'Add'}
