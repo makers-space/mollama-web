@@ -1,11 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Page, Container, Card, Typography, Button, Badge, Icon, Input } from '@components/Components';
+import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
 import { toolService, deviceService, describeError } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
-const SIGN_IN_LABELS = { account: 'Sign in with your account', key: 'Needs a key from the app', none: 'No sign-in needed' };
+const SIGN_IN_LABELS = { account: 'Sign in with your account', key: 'Needs a key', none: 'No sign-in' };
+// Each listed app's own logo, where the icon sets have one. The few without one get a plain icon for what they do.
+const APP_ICONS = {
+    Notion: 'SiNotion', Atlassian: 'SiAtlassian', Airtable: 'SiAirtable', Coda: 'SiCoda', Linear: 'SiLinear', ClickUp: 'SiClickup', Trello: 'SiTrello', Todoist: 'SiTodoist',
+    'monday.com': 'TbBrandMonday', GitHub: 'SiGithub', GitLab: 'SiGitlab', Sentry: 'SiSentry', Netlify: 'SiNetlify', Cloudflare: 'SiCloudflare', 'Cloudflare Docs': 'SiCloudflare',
+    Supabase: 'SiSupabase', Neon: 'SiNeon', PostHog: 'SiPosthog', Context7: 'SiUpstash', Miro: 'SiMiro', Webflow: 'SiWebflow', Wix: 'SiWix', 'WordPress.com': 'SiWordpress',
+    Calendly: 'SiCalendly', Stripe: 'SiStripe', 'Hugging Face': 'SiHuggingface', Zapier: 'SiZapier', Make: 'SiMake',
+    DeepWiki: 'FiBookOpen', Exa: 'FiSearch', Firecrawl: 'FiSearch', Tavily: 'FiSearch'
+};
+const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', offline: 'default' };
+
 // A sign-in page opens in a tab of its own. The tab is opened at the click, before anything is asked of the server,
 // because browsers block a tab opened later. Inside the desktop app the link is handed to the person's browser instead.
 const openTab = () => {
@@ -18,71 +28,59 @@ const sendTo = (tab, url) => {
     if (tab && !tab.closed) tab.location.replace(url);
     else window.location.assign(url);
 };
-const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', offline: 'default' };
 
-const Heading = ({ icon, title, children }) => (
+const Section = ({ title, note, children }) => (
     <Container layout="flex" justify="between" align="center" gap="sm" padding="none" width="100%" wrap={false}>
-        <Container layout="flex" align="center" gap="xs" padding="none" wrap={false} minWidth="0">
-            <Icon name={icon} size="xs" color="primary" />
-            <Typography as="h2" size="sm" weight="semibold" truncate>{title}</Typography>
+        <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+            <Typography as="h2" size="sm" weight="semibold">{title}</Typography>
+            {note && <Typography size="xxs" color="muted">{note}</Typography>}
         </Container>
         {children}
     </Container>
 );
 
-const ServerCard = ({ server, computer, busy, onCheck, onSignIn, onRemove }) => {
+const ServerCard = ({ server, icon, where, busy, onCheck, onSignIn, onRemove }) => {
     const [showTools, setShowTools] = useState(false);
     const { health } = server;
     const ready = health.state === 'healthy';
     const canSignIn = server.kind === 'remote' && ['signin', 'refused'].includes(health.state);
 
     return (
-        <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
-            <Heading icon={server.kind === 'remote' ? 'FiGlobe' : 'FiMonitor'} title={server.name}>
-                <Container layout="flex" gap="xs" padding="none" align="center" justify="end">
-                    <Badge size="xs" color={HEALTH_COLORS[health.state] || 'error'}>{health.label}</Badge>
-                    {canSignIn && <Button size="xs" color="primary" disabled={busy} onClick={() => onSignIn(server)} title="Opens the app's sign-in page in a new tab"><Icon name="FiLogIn" size="xs" />Sign in</Button>}
-                    <Button size="xs" color="secondary" disabled={busy} onClick={() => onCheck(server)}><Icon name="FiRefreshCw" size="xs" />{busy ? 'Checking…' : 'Check now'}</Button>
-                    <Button size="xs" color="error" disabled={busy} onClick={() => onRemove(server)}><Icon name="FiTrash2" size="xs" />Remove</Button>
-                </Container>
-            </Heading>
-            <Typography size="xxs" color="muted" truncate title={server.address || computer}>
-                {server.kind === 'remote' ? server.address : `On ${computer || 'a computer that is no longer linked'}`}
-            </Typography>
-
-            {!ready && (
-                <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                    <Typography size="xs" weight="semibold">To make this usable</Typography>
-                    {health.needs.map((need) => (
-                        <Container key={need} layout="flex" align="center" gap="xs" padding="none" wrap={false}>
-                            <Icon name="FiAlertCircle" size="xs" color="warning" />
-                            <Typography size="xs">{need}</Typography>
-                        </Container>
-                    ))}
-                    {health.detail && <Typography size="xxs" color="muted">What that computer reported: {health.detail}</Typography>}
-                </Container>
-            )}
-
-            {server.tools.length > 0 && (
-                <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                    <Container layout="flex" align="center" gap="xs" padding="none">
-                        <Button size="xxs" color="secondary" onClick={() => setShowTools((shown) => !shown)}>
-                            <Icon name={showTools ? 'FiChevronDown' : 'FiChevronRight'} size="xs" />
-                            {server.tools.length === 1 ? '1 tool' : `${server.tools.length} tools`}
-                        </Button>
-                        {!ready && <Typography size="xxs" color="muted">As last seen. They cannot be used until this is ready.</Typography>}
+        <Card layout="flex-column" gap="xs" padding="sm" width="100%" minWidth="0" hover={false}>
+            <Container layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%" wrap={false}>
+                <Container layout="flex" align="center" gap="xs" padding="none" wrap={false} minWidth="0">
+                    <Icon name={icon} size="sm" color="primary" />
+                    <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+                        <Typography size="sm" weight="semibold" truncate>{server.name}</Typography>
+                        <Typography size="xxs" color="muted" truncate title={where}>{where}</Typography>
                     </Container>
-                    {showTools && server.tools.map((tool) => (
-                        <Container key={tool.name} layout="flex" align="start" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                                <Typography size="xs" weight="medium">{tool.title || tool.name}</Typography>
-                                {tool.description && <Typography size="xxs" color="muted">{tool.description}</Typography>}
-                            </Container>
-                            <Badge size="xs" color={tool.readOnly ? 'secondary' : 'warning'}>{tool.readOnly ? 'Only reads' : 'Can change things'}</Badge>
-                        </Container>
-                    ))}
                 </Container>
-            )}
+                <Badge size="xs" color={HEALTH_COLORS[health.state] || 'error'}>{health.label}</Badge>
+            </Container>
+
+            {!ready && health.needs.map((need) => <Typography key={need} size="xxs">{need}</Typography>)}
+            {!ready && health.detail && <Typography size="xxs" color="muted">Reported: {health.detail}</Typography>}
+
+            <Container layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%" wrap={false}>
+                {server.tools.length > 0 ? (
+                    <Button size="xxs" color="secondary" flat onClick={() => setShowTools((shown) => !shown)}>
+                        <Icon name={showTools ? 'FiChevronDown' : 'FiChevronRight'} size="xs" />
+                        {server.tools.length === 1 ? '1 tool' : `${server.tools.length} tools`}
+                    </Button>
+                ) : <Typography size="xxs" color="muted">No tools yet</Typography>}
+                <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                    {canSignIn && <Button size="xxs" color="primary" disabled={busy} title="Opens the app's sign-in page in a new tab" onClick={() => onSignIn(server)}><Icon name="FiLogIn" size="xs" />Sign in</Button>}
+                    <Button size="xxs" color="secondary" disabled={busy} onClick={() => onCheck(server)}><Icon name="FiRefreshCw" size="xs" />{busy ? 'Checking…' : 'Check'}</Button>
+                    <Button size="xxs" color="error" disabled={busy} onClick={() => onRemove(server)}><Icon name="FiTrash2" size="xs" />Remove</Button>
+                </Container>
+            </Container>
+
+            {showTools && server.tools.map((tool) => (
+                <Container key={tool.name} layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%" wrap={false}>
+                    <Typography size="xxs" truncate title={tool.description || tool.name}>{tool.title || tool.name}</Typography>
+                    <Icon name={tool.readOnly ? 'FiEye' : 'FiEdit3'} size="xs" color={tool.readOnly ? 'muted' : 'warning'} title={tool.readOnly ? 'Only reads' : 'Can change things'} aria-label={tool.readOnly ? 'Only reads' : 'Can change things'} />
+                </Container>
+            ))}
         </Card>
     );
 };
@@ -90,15 +88,16 @@ const ServerCard = ({ server, computer, busy, onCheck, onSignIn, onRemove }) => 
 const ToolsPage = () => {
     const { success, error: showError, confirm } = useNotification();
     const [params, setParams] = useSearchParams();
+    const [view, setView] = useState(params.get('view') === 'local' ? 'local' : 'remote');
     const [servers, setServers] = useState(null);
     const [devices, setDevices] = useState([]);
+    const [apps, setApps] = useState([]);
     const [failed, setFailed] = useState(false);
     const [busy, setBusy] = useState({});
     const [here, setHere] = useState(null);
     const [remote, setRemote] = useState({ name: '', address: '', key: '' });
     const [local, setLocal] = useState({ name: '', command: '', args: '' });
     const [adding, setAdding] = useState(null);
-    const [apps, setApps] = useState([]);
     const [find, setFind] = useState('');
     const [keyHelp, setKeyHelp] = useState(null);
     const localBridge = window.desktop?.tools || null;
@@ -118,10 +117,8 @@ const ToolsPage = () => {
     const load = useCallback(async () => {
         setFailed(false);
         try {
-            const [listed, computers, catalogue] = await Promise.all([toolService.list(), deviceService.listDevices().catch(() => ({ devices: [] })), toolService.catalogue().catch(() => ({ apps: [] }))]);
+            const listed = await toolService.list();
             setServers(listed.servers);
-            setApps(catalogue.apps || []);
-            setDevices(computers.devices || []);
             listed.servers
                 .filter((server) => !server.health.checkedAt || Date.now() - new Date(server.health.checkedAt).getTime() > STALE_MS)
                 .forEach(check);
@@ -132,6 +129,8 @@ const ToolsPage = () => {
 
     useEffect(() => {
         load();
+        toolService.catalogue().then((catalogue) => setApps(catalogue.apps || [])).catch(() => undefined);
+        deviceService.listDevices().then((computers) => setDevices(computers.devices || [])).catch(() => undefined);
         window.desktop?.deviceState?.().then((state) => setHere(state?.deviceId || null));
         window.addEventListener('focus', load);
         return () => window.removeEventListener('focus', load);
@@ -245,20 +244,36 @@ const ToolsPage = () => {
         setAdding(null);
     };
 
-    const computerName = (id) => devices.find((device) => device.id === id)?.name || null;
+    const pick = (next) => {
+        setView(next);
+        setParams(next === 'local' ? { view: 'local' } : {}, { replace: true });
+    };
+    const computerName = (id) => devices.find((device) => device.id === id)?.name || 'a computer that is no longer linked';
     const remotes = (servers || []).filter((server) => server.kind === 'remote');
     const locals = (servers || []).filter((server) => server.kind === 'local');
     const cardProps = { onCheck: check, onSignIn: signIn, onRemove: remove };
+    const listed = new Map(apps.map((entry) => [entry.address, entry]));
     const added = new Set(remotes.map((server) => server.address));
     const words = find.trim().toLowerCase();
-    const shownApps = apps.filter((entry) => !words || `${entry.name} ${entry.group} ${entry.does}`.toLowerCase().includes(words));
+    const shownApps = apps.filter((entry) => !added.has(entry.address) && (!words || `${entry.name} ${entry.group} ${entry.does}`.toLowerCase().includes(words)));
+    const showKeyHelp = keyHelp?.key && keyHelp.address === remote.address.trim();
 
     return (
         <Page layout="flex-column" padding="none" gap="none" background="dots" backgroundFade="bottom">
             <Container layout="flex-column" align="center" gap="none" padding="none" width="100%" height="100vh" wrap={false} overflow="hidden">
-                <Container layout="flex-column" gap="none" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
-                    <Typography as="h1" size="2xl" weight="bold" animation="blur" animationDuration={600}>Tools</Typography>
-                    <Typography size="xs" color="muted">Apps your models can use while they answer. Each one is checked, and shows what it needs when it is not ready.</Typography>
+                <Container layout="flex" justify="between" align="center" gap="md" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
+                    <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+                        <Typography as="h1" size="2xl" weight="bold" animation="blur" animationDuration={600}>Tools</Typography>
+                        <Typography size="xs" color="muted">
+                            {view === 'remote'
+                                ? 'Apps that live online. Mollama connects to them from its own server, so they work from any of your devices at any time.'
+                                : 'Apps on your own computer. Mollama reaches them through the Mollama desktop app there, so that computer has to be on with the desktop app open.'}
+                        </Typography>
+                    </Container>
+                    <ButtonGroup size="sm" selectable={false} wrap={false} justify="end">
+                        <Button size="sm" color={view === 'remote' ? 'primary' : 'secondary'} selected={view === 'remote'} onClick={() => pick('remote')}><Icon name="FiGlobe" size="xs" />Remote{remotes.length > 0 ? ` (${remotes.length})` : ''}</Button>
+                        <Button size="sm" color={view === 'local' ? 'primary' : 'secondary'} selected={view === 'local'} onClick={() => pick('local')}><Icon name="FiMonitor" size="xs" />Local{locals.length > 0 ? ` (${locals.length})` : ''}</Button>
+                    </ButtonGroup>
                 </Container>
                 <Container layout="flex" justify="center" padding="none" width="100%" flexFill minHeight="0" overflow="auto">
                     <Container layout="flex-column" gap="md" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
@@ -272,95 +287,112 @@ const ToolsPage = () => {
                             </Card>
                         )}
 
-                        {servers && (
-                            <Container layout="grid" columns={2} gap="md" padding="none" width="100%">
-                                <Container layout="flex-column" gap="sm" padding="none" width="100%" minWidth="0">
-                                    <Heading icon="FiGlobe" title="Remote tools" />
-                                    <Typography size="xxs" color="muted">Apps that live online. Mollama connects to them from its own server, so they work from any of your devices at any time. Add the app, then sign in to it.</Typography>
-                                    {remotes.map((server) => <ServerCard key={server.id} server={server} busy={Boolean(busy[server.id])} {...cardProps} />)}
-                                    {apps.length > 0 && (
-                                        <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
-                                            <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                                                <Typography size="sm" weight="semibold">Apps ready to add</Typography>
-                                                <Input size="xs" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find an app" width="180px" />
+                        {servers && view === 'remote' && (
+                            <>
+                                {remotes.length > 0 && (
+                                    <>
+                                        <Section title="Connected" note="What your models can use. Anything not ready says what it needs." />
+                                        <Container layout="grid" columns="auto" gap="sm" padding="none" width="100%" align="start">
+                                            {remotes.map((server) => <ServerCard key={server.id} server={server} icon={APP_ICONS[listed.get(server.address)?.name] || 'FiGlobe'} where={server.address} busy={Boolean(busy[server.id])} {...cardProps} />)}
+                                        </Container>
+                                    </>
+                                )}
+
+                                {apps.length > 0 && (
+                                    <>
+                                        <Section title="Apps ready to add" note="Each one is the maker's own tool server. Add it, then sign in to it.">
+                                            <Container padding="none" width="220px">
+                                                <Input size="xs" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find an app" width="100%" />
                                             </Container>
-                                            <Container layout="flex-column" gap="xs" padding="none" width="100%" maxHeight="340px" overflow="auto" wrap={false}>
-                                                {shownApps.length === 0 && <Typography size="xs" color="muted">No listed app matches. It can still be added by its address below.</Typography>}
-                                                {shownApps.map((entry) => (
-                                                    <Container key={entry.address} layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                                                        <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                                                            <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
-                                                                <Typography size="xs" weight="semibold">{entry.name}</Typography>
+                                        </Section>
+                                        {shownApps.length === 0 && <Typography size="xs" color="muted">{words ? 'No listed app matches. It can still be added by its address below.' : 'Every listed app is added.'}</Typography>}
+                                        <Container layout="grid" columns={4} gap="sm" padding="none" width="100%">
+                                            {shownApps.map((entry) => (
+                                                <Card key={entry.address} layout="flex-column" gap="xs" padding="md" width="100%" minWidth="0" hover={false} shadow={false}>
+                                                    <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                                        <Container layout="flex" align="center" gap="sm" padding="none" wrap={false} minWidth="0">
+                                                            <Icon name={APP_ICONS[entry.name] || 'FiGlobe'} size="md" color="primary" />
+                                                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+                                                                <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
                                                                 <Typography size="xxs" color="muted">{entry.group}</Typography>
                                                             </Container>
-                                                            <Typography size="xxs" color="muted">{entry.does}. {SIGN_IN_LABELS[entry.signIn]}.</Typography>
                                                         </Container>
-                                                        <Button size="xs" color={added.has(entry.address) ? 'secondary' : 'primary'} disabled={added.has(entry.address) || adding === entry.address} onClick={() => addApp(entry)}>
-                                                            {added.has(entry.address) ? 'Added' : adding === entry.address ? 'Adding…' : entry.signIn === 'key' ? 'Add with a key' : 'Add'}
+                                                        <Button size="xs" color="primary" disabled={adding === entry.address} onClick={() => addApp(entry)}>
+                                                            <Icon name={entry.signIn === 'key' ? 'FiKey' : 'FiPlus'} size="xs" />{adding === entry.address ? 'Adding…' : entry.signIn === 'key' ? 'Add with a key' : 'Add'}
                                                         </Button>
                                                     </Container>
-                                                ))}
-                                            </Container>
-                                        </Card>
-                                    )}
-                                    <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
-                                        <Typography size="sm" weight="semibold">Add another app by its address</Typography>
+                                                    <Typography size="xs">{entry.does}.</Typography>
+                                                    <Typography size="xxs" color="muted">{SIGN_IN_LABELS[entry.signIn]}</Typography>
+                                                </Card>
+                                            ))}
+                                        </Container>
+                                    </>
+                                )}
+
+                                <Section title="Add another app by its address" note="The MCP address from the app's own help pages. Leave the key empty to sign in with your account after adding." />
+                                <Card layout="flex-column" gap="sm" padding="sm" width="100%" hover={false}>
+                                    <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
                                         <Input size="sm" label="Name" value={remote.name} onChange={(e) => setRemote((form) => ({ ...form, name: e.target.value }))} placeholder="Notion" width="100%" />
                                         <Input size="sm" label="Tool server address" value={remote.address} onChange={(e) => setRemote((form) => ({ ...form, address: e.target.value }))} placeholder="https://…" width="100%" />
                                         <Input size="sm" label="Key (only if the app gave you one)" type="password" value={remote.key} onChange={(e) => setRemote((form) => ({ ...form, key: e.target.value }))} width="100%" />
-                                        {keyHelp?.key && keyHelp.address === remote.address.trim() ? (
-                                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                                <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
-                                                    <Typography size="xs" weight="semibold">Getting a key for {keyHelp.name}</Typography>
-                                                    <Button size="xs" color="secondary" title="Opens in a new tab" onClick={() => window.open(keyHelp.key.page, '_blank', 'noopener')}>
-                                                        <Icon name="FiExternalLink" size="xs" />Open the key page
-                                                    </Button>
-                                                </Container>
+                                    </Container>
+                                    {showKeyHelp && (
+                                        <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                                            <Container layout="flex" align="center" gap="sm" padding="none" wrap={false}>
+                                                <Typography size="xs" weight="semibold">Getting a key for {keyHelp.name}</Typography>
                                                 <Typography size="xxs" color="muted">{keyHelp.key.cost}</Typography>
-                                                {keyHelp.key.steps.map((step, index) => (
-                                                    <Typography key={step} size="xs">{index + 1}. {step}</Typography>
-                                                ))}
-                                                <Typography size="xxs" color="muted">The key is stored sealed on Mollama&apos;s server and is never shown again or sent to a model.</Typography>
+                                                <Button size="xxs" color="secondary" title="Opens in a new tab" onClick={() => window.open(keyHelp.key.page, '_blank', 'noopener')}>
+                                                    <Icon name="FiExternalLink" size="xs" />Open the key page
+                                                </Button>
                                             </Container>
-                                        ) : (
-                                            <Typography size="xxs" color="muted">The address is the MCP address from the app&apos;s own help pages. Leave the key empty to sign in with your account after adding.</Typography>
-                                        )}
-                                        <Container layout="flex" justify="end" padding="none" width="100%">
-                                            <Button size="sm" color="primary" disabled={adding === 'remote' || !remote.name.trim() || !/^https:\/\/\S+$/.test(remote.address.trim())} onClick={addRemote}>
-                                                <Icon name="FiPlus" size="xs" />{adding === 'remote' ? 'Adding…' : 'Add'}
-                                            </Button>
+                                            {keyHelp.key.steps.map((step, index) => <Typography key={step} size="xs">{index + 1}. {step}</Typography>)}
+                                            <Typography size="xxs" color="muted">The key is stored sealed on Mollama&apos;s server and is never shown again or sent to a model.</Typography>
                                         </Container>
-                                    </Card>
-                                </Container>
+                                    )}
+                                    <Container layout="flex" justify="end" padding="none" width="100%">
+                                        <Button size="sm" color="primary" disabled={adding === 'remote' || !remote.name.trim() || !/^https:\/\/\S+$/.test(remote.address.trim())} onClick={addRemote}>
+                                            <Icon name="FiPlus" size="xs" />{adding === 'remote' ? 'Adding…' : 'Add'}
+                                        </Button>
+                                    </Container>
+                                </Card>
+                            </>
+                        )}
 
-                                <Container layout="flex-column" gap="sm" padding="none" width="100%" minWidth="0">
-                                    <Heading icon="FiMonitor" title="Local tools" />
-                                    <Typography size="xxs" color="muted">Apps on your own computer. Mollama reaches them through the Mollama desktop app on that computer, so it has to be on, with the desktop app open.</Typography>
-                                    {locals.map((server) => <ServerCard key={server.id} server={server} computer={computerName(server.device)} busy={Boolean(busy[server.id])} {...cardProps} />)}
-                                    <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
-                                        <Typography size="sm" weight="semibold">Add an app on this computer</Typography>
-                                        {localBridge && here ? (
-                                            <>
+                        {servers && view === 'local' && (
+                            <>
+                                {locals.length > 0 && (
+                                    <>
+                                        <Section title="Connected" note="Tool servers on your computers. Anything not ready says what it needs." />
+                                        <Container layout="grid" columns="auto" gap="sm" padding="none" width="100%" align="start">
+                                            {locals.map((server) => <ServerCard key={server.id} server={server} icon="FiMonitor" where={`On ${computerName(server.device)}`} busy={Boolean(busy[server.id])} {...cardProps} />)}
+                                        </Container>
+                                    </>
+                                )}
+
+                                <Section title="Add an app on this computer" note="The program and what to pass to it come from the app's MCP setup instructions. They are kept on this computer only." />
+                                <Card layout="flex-column" gap="sm" padding="sm" width="100%" hover={false}>
+                                    {localBridge && here ? (
+                                        <>
+                                            <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
                                                 <Input size="sm" label="Name" value={local.name} onChange={(e) => setLocal((form) => ({ ...form, name: e.target.value }))} placeholder="Blender" width="100%" />
                                                 <Input size="sm" label="Program that starts its tool server" value={local.command} onChange={(e) => setLocal((form) => ({ ...form, command: e.target.value }))} placeholder="uvx" width="100%" />
                                                 <Input size="sm" label="What to pass to it" value={local.args} onChange={(e) => setLocal((form) => ({ ...form, args: e.target.value }))} placeholder="blender-mcp" width="100%" />
-                                                <Typography size="xxs" color="muted">Both come from the app&apos;s MCP setup instructions. They are kept on this computer only and run nowhere else.</Typography>
-                                                <Container layout="flex" justify="end" padding="none" width="100%">
-                                                    <Button size="sm" color="primary" disabled={adding === 'local' || !local.name.trim() || !local.command.trim()} onClick={addLocal}>
-                                                        <Icon name="FiPlus" size="xs" />{adding === 'local' ? 'Adding…' : 'Add'}
-                                                    </Button>
-                                                </Container>
-                                            </>
-                                        ) : (
-                                            <Typography size="xs" color="muted">
-                                                {window.desktop
-                                                    ? (localBridge ? 'Sign in on this computer first, so it is linked to your account.' : 'This version of the Mollama desktop app cannot run local tools yet. Update it, then open this page again.')
-                                                    : 'A local app is added from the Mollama desktop app on the computer it is installed on. Open this page there.'}
-                                            </Typography>
-                                        )}
-                                    </Card>
-                                </Container>
-                            </Container>
+                                            </Container>
+                                            <Container layout="flex" justify="end" padding="none" width="100%">
+                                                <Button size="sm" color="primary" disabled={adding === 'local' || !local.name.trim() || !local.command.trim()} onClick={addLocal}>
+                                                    <Icon name="FiPlus" size="xs" />{adding === 'local' ? 'Adding…' : 'Add'}
+                                                </Button>
+                                            </Container>
+                                        </>
+                                    ) : (
+                                        <Typography size="xs" color="muted">
+                                            {window.desktop
+                                                ? (localBridge ? 'Sign in on this computer first, so it is linked to your account.' : 'This version of the Mollama desktop app cannot run local tools yet. Update it, then open this page again.')
+                                                : 'A local app is added from the Mollama desktop app on the computer it is installed on. Open this page there.'}
+                                        </Typography>
+                                    )}
+                                </Card>
+                            </>
                         )}
                     </Container>
                 </Container>
