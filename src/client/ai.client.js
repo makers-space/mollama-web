@@ -209,7 +209,7 @@ export const deviceService = {
 };
 
 // The desktop app's installers are published as releases of a public repository; this reads which ones exist.
-const INSTALLERS = 'makers-space/mollama-installers';
+const INSTALLERS = 'mkrspc-one/mollama-installers';
 // What the pickers showed last, kept so they can be drawn at once and corrected when the fresh answer arrives.
 const readKept = (key, fallback) => {
     try {
