@@ -181,6 +181,15 @@ let chatDevice = null;
 const onDevice = (id) => (id ? { headers: { 'X-Mollama-Device': id } } : {});
 const onViewed = () => onDevice(viewedDevice);
 
+export const toolService = {
+    list: () => api.get('/tools/servers'),
+    add: (details) => api.post('/tools/servers', details),
+    check: (id) => api.post(`/tools/servers/${id}/check`, {}),
+    update: (id, changes) => api.patch(`/tools/servers/${id}`, changes),
+    remove: (id) => api.delete(`/tools/servers/${id}`),
+    signIn: (id) => api.post(`/tools/servers/${id}/sign-in`, {})
+};
+
 export const deviceService = {
     listDevices: () => api.get('/devices'),
     linkDevice: (details) => api.post('/devices/link', details),

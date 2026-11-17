@@ -11,6 +11,7 @@ import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import AdminPage from './pages/AdminPage';
 import DevicesPage from './pages/DevicesPage';
+import ToolsPage from './pages/ToolsPage';
 import SettingsPage from './pages/SettingsPage';
 import ModelsPage from './pages/ModelsPage';
 import ChatPage from './pages/ChatPage';
@@ -70,6 +71,11 @@ function AppRouter() {
         <Route path="/devices" element={
           <RouteAccessControl path="/devices">
             <DevicesPage />
+          </RouteAccessControl>
+        } />
+        <Route path="/tools" element={
+          <RouteAccessControl path="/tools">
+            <ToolsPage />
           </RouteAccessControl>
         } />
         <Route path="/settings" element={

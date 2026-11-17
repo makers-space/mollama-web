@@ -146,6 +146,15 @@ export const Navigation = ({
             });
 
             items.push({
+                id: 'tools',
+                label: 'Tools',
+                icon: 'FiTool',
+                path: '/tools',
+                roles: ['USER', 'CREATOR', 'SUPER_CREATOR', 'ADMIN', 'OWNER'],
+                requireAuth: true
+            });
+
+            items.push({
                 id: 'settings',
                 label: 'Settings',
                 icon: 'FiSliders',
