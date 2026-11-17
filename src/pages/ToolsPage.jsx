@@ -6,6 +6,18 @@ import { toolService, deviceService, describeError } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
 const SIGN_IN_LABELS = { account: 'Sign in with your account', key: 'Needs a key from the app', none: 'No sign-in needed' };
+// A sign-in page opens in a tab of its own. The tab is opened at the click, before anything is asked of the server,
+// because browsers block a tab opened later. Inside the desktop app the link is handed to the person's browser instead.
+const openTab = () => {
+    if (window.desktop) return null;
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null;
+    return tab;
+};
+const sendTo = (tab, url) => {
+    if (tab && !tab.closed) tab.location.replace(url);
+    else window.location.assign(url);
+};
 const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', offline: 'default' };
 
 const Heading = ({ icon, title, children }) => (
@@ -29,7 +41,7 @@ const ServerCard = ({ server, computer, busy, onCheck, onSignIn, onRemove }) => 
             <Heading icon={server.kind === 'remote' ? 'FiGlobe' : 'FiMonitor'} title={server.name}>
                 <Container layout="flex" gap="xs" padding="none" align="center" justify="end">
                     <Badge size="xs" color={HEALTH_COLORS[health.state] || 'error'}>{health.label}</Badge>
-                    {canSignIn && <Button size="xs" color="primary" disabled={busy} onClick={() => onSignIn(server)}><Icon name="FiLogIn" size="xs" />Sign in</Button>}
+                    {canSignIn && <Button size="xs" color="primary" disabled={busy} onClick={() => onSignIn(server)} title="Opens the app's sign-in page in a new tab"><Icon name="FiLogIn" size="xs" />Sign in</Button>}
                     <Button size="xs" color="secondary" disabled={busy} onClick={() => onCheck(server)}><Icon name="FiRefreshCw" size="xs" />{busy ? 'Checking…' : 'Check now'}</Button>
                     <Button size="xs" color="error" disabled={busy} onClick={() => onRemove(server)}><Icon name="FiTrash2" size="xs" />Remove</Button>
                 </Container>
@@ -124,25 +136,54 @@ const ToolsPage = () => {
         return () => window.removeEventListener('focus', load);
     }, [load]);
 
-    useEffect(() => {
-        const result = params.get('signin');
-        if (!result) return;
+    const tellResult = useCallback((result) => {
         if (result === 'done') success('Signed in. The tools are ready to use.');
         else showError('The sign-in did not finish. Choose Sign in to try again.');
-        setParams({}, { replace: true });
-    }, [params, setParams, success, showError]);
+    }, [success, showError]);
 
-    const signIn = async (server) => {
+    // The sign-in tab ends up back on this page. It passes the result to the tab the person started from and closes;
+    // if no other tab is listening, it stays open as the Tools page.
+    useEffect(() => {
+        const channel = new BroadcastChannel('mollama-tools');
+        const result = params.get('signin');
+        let timer = null;
+        channel.onmessage = (event) => {
+            if (event.data?.heard) return;
+            if (event.data?.signin) {
+                channel.postMessage({ heard: true });
+                tellResult(event.data.signin);
+                load();
+            }
+        };
+        if (result) {
+            setParams({}, { replace: true });
+            const waiting = new BroadcastChannel('mollama-tools');
+            waiting.onmessage = (event) => {
+                if (!event.data?.heard) return;
+                clearTimeout(timer);
+                timer = null;
+                window.close();
+            };
+            waiting.postMessage({ signin: result });
+            timer = setTimeout(() => { tellResult(result); waiting.close(); }, 600);
+        }
+        return () => channel.close();
+    }, []);
+
+    const signIn = async (server, tab = openTab()) => {
         setBusy((current) => ({ ...current, [server.id]: true }));
         try {
             const started = await toolService.signIn(server.id);
-            if (started.url) return window.location.assign(started.url);
-            replace(started.server);
+            if (started.url) sendTo(tab, started.url);
+            else {
+                tab?.close();
+                replace(started.server);
+            }
         } catch (error) {
+            tab?.close();
             showError(describeError(error, 'The sign-in could not be started.'));
         }
         setBusy((current) => ({ ...current, [server.id]: false }));
-        return undefined;
     };
 
     const remove = async (server) => {
@@ -172,11 +213,14 @@ const ToolsPage = () => {
     const addApp = async (entry) => {
         if (entry.signIn === 'key') return setRemote({ name: entry.name, address: entry.address, key: '' });
         setAdding(entry.address);
+        const tab = entry.signIn === 'account' ? openTab() : null;
         try {
             const { server } = await toolService.add({ kind: 'remote', name: entry.name, address: entry.address });
             setServers((current) => [...(current || []), server]);
-            if (server.health.state === 'signin') await signIn(server);
+            if (server.health.state === 'signin') await signIn(server, tab);
+            else tab?.close();
         } catch (error) {
+            tab?.close();
             showError(describeError(error, 'This app could not be added.'));
         }
         return setAdding(null);
