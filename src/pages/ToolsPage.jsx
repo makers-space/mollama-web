@@ -5,6 +5,7 @@ import { useNotification } from '@contexts/NotificationContext';
 import { toolService, deviceService, describeError } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
+const SIGN_IN_LABELS = { account: 'Sign in with your account', key: 'Needs a key from the app', none: 'No sign-in needed' };
 const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', offline: 'default' };
 
 const Heading = ({ icon, title, children }) => (
@@ -85,6 +86,8 @@ const ToolsPage = () => {
     const [remote, setRemote] = useState({ name: '', address: '', key: '' });
     const [local, setLocal] = useState({ name: '', command: '', args: '' });
     const [adding, setAdding] = useState(null);
+    const [apps, setApps] = useState([]);
+    const [find, setFind] = useState('');
     const localBridge = window.desktop?.tools || null;
 
     const replace = (server) => setServers((current) => (current || []).map((one) => (one.id === server.id ? server : one)));
@@ -102,8 +105,9 @@ const ToolsPage = () => {
     const load = useCallback(async () => {
         setFailed(false);
         try {
-            const [listed, computers] = await Promise.all([toolService.list(), deviceService.listDevices().catch(() => ({ devices: [] }))]);
+            const [listed, computers, catalogue] = await Promise.all([toolService.list(), deviceService.listDevices().catch(() => ({ devices: [] })), toolService.catalogue().catch(() => ({ apps: [] }))]);
             setServers(listed.servers);
+            setApps(catalogue.apps || []);
             setDevices(computers.devices || []);
             listed.servers
                 .filter((server) => !server.health.checkedAt || Date.now() - new Date(server.health.checkedAt).getTime() > STALE_MS)
@@ -164,6 +168,20 @@ const ToolsPage = () => {
         setAdding(null);
     };
 
+    // One step for a listed app: add it, then go straight to its sign-in page when it asks for an account.
+    const addApp = async (entry) => {
+        if (entry.signIn === 'key') return setRemote({ name: entry.name, address: entry.address, key: '' });
+        setAdding(entry.address);
+        try {
+            const { server } = await toolService.add({ kind: 'remote', name: entry.name, address: entry.address });
+            setServers((current) => [...(current || []), server]);
+            if (server.health.state === 'signin') await signIn(server);
+        } catch (error) {
+            showError(describeError(error, 'This app could not be added.'));
+        }
+        return setAdding(null);
+    };
+
     const addLocal = async () => {
         setAdding('local');
         try {
@@ -182,6 +200,9 @@ const ToolsPage = () => {
     const remotes = (servers || []).filter((server) => server.kind === 'remote');
     const locals = (servers || []).filter((server) => server.kind === 'local');
     const cardProps = { onCheck: check, onSignIn: signIn, onRemove: remove };
+    const added = new Set(remotes.map((server) => server.address));
+    const words = find.trim().toLowerCase();
+    const shownApps = apps.filter((entry) => !words || `${entry.name} ${entry.group} ${entry.does}`.toLowerCase().includes(words));
 
     return (
         <Page layout="flex-column" padding="none" gap="none" background="dots" backgroundFade="bottom">
@@ -208,8 +229,33 @@ const ToolsPage = () => {
                                     <Heading icon="FiGlobe" title="Remote tools" />
                                     <Typography size="xxs" color="muted">Apps that live online. Mollama connects to them from its own server, so they work from any of your devices at any time. Add the app, then sign in to it.</Typography>
                                     {remotes.map((server) => <ServerCard key={server.id} server={server} busy={Boolean(busy[server.id])} {...cardProps} />)}
+                                    {apps.length > 0 && (
+                                        <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
+                                            <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                                <Typography size="sm" weight="semibold">Apps ready to add</Typography>
+                                                <Input size="xs" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find an app" width="180px" />
+                                            </Container>
+                                            <Container layout="flex-column" gap="xs" padding="none" width="100%" maxHeight="340px" overflow="auto" wrap={false}>
+                                                {shownApps.length === 0 && <Typography size="xs" color="muted">No listed app matches. It can still be added by its address below.</Typography>}
+                                                {shownApps.map((entry) => (
+                                                    <Container key={entry.address} layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                                        <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+                                                            <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                                                                <Typography size="xs" weight="semibold">{entry.name}</Typography>
+                                                                <Typography size="xxs" color="muted">{entry.group}</Typography>
+                                                            </Container>
+                                                            <Typography size="xxs" color="muted">{entry.does}. {SIGN_IN_LABELS[entry.signIn]}.</Typography>
+                                                        </Container>
+                                                        <Button size="xs" color={added.has(entry.address) ? 'secondary' : 'primary'} disabled={added.has(entry.address) || adding === entry.address} onClick={() => addApp(entry)}>
+                                                            {added.has(entry.address) ? 'Added' : adding === entry.address ? 'Adding…' : entry.signIn === 'key' ? 'Add with a key' : 'Add'}
+                                                        </Button>
+                                                    </Container>
+                                                ))}
+                                            </Container>
+                                        </Card>
+                                    )}
                                     <Card layout="flex-column" gap="sm" padding="md" width="100%" hover={false}>
-                                        <Typography size="sm" weight="semibold">Add an online app</Typography>
+                                        <Typography size="sm" weight="semibold">Add another app by its address</Typography>
                                         <Input size="sm" label="Name" value={remote.name} onChange={(e) => setRemote((form) => ({ ...form, name: e.target.value }))} placeholder="Notion" width="100%" />
                                         <Input size="sm" label="Tool server address" value={remote.address} onChange={(e) => setRemote((form) => ({ ...form, address: e.target.value }))} placeholder="https://…" width="100%" />
                                         <Input size="sm" label="Key (only if the app gave you one)" type="password" value={remote.key} onChange={(e) => setRemote((form) => ({ ...form, key: e.target.value }))} width="100%" />

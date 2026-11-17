@@ -183,6 +183,7 @@ const onViewed = () => onDevice(viewedDevice);
 
 export const toolService = {
     list: () => api.get('/tools/servers'),
+    catalogue: () => api.get('/tools/catalogue'),
     add: (details) => api.post('/tools/servers', details),
     check: (id) => api.post(`/tools/servers/${id}/check`, {}),
     update: (id, changes) => api.patch(`/tools/servers/${id}`, changes),
