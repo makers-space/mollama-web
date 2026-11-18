@@ -996,6 +996,10 @@ const stepText = (step, active = false) => {
         if (step.failed) return `Could not open a skill called “${step.input}”`;
         return active ? `Opening the ${step.input} skill…` : `Opened the ${step.input} skill`;
     }
+    if (step.tool === 'Component') {
+        if (step.failed) return `Could not find a component called “${step.input}”`;
+        return active ? `Reading how to draw ${step.input}…` : `Read how to draw ${step.input}`;
+    }
     if (step.tool === 'Skill library') return active ? `Looking in the skill library for “${step.input}”…` : `Looked in the skill library for “${step.input}”`;
     if (!isSearchStep(step)) {
         if (step.failed) return `Could not use ${step.tool}: ${TOOL_FAILURES[step.failed] || TOOL_FAILURES.unreachable}`;
