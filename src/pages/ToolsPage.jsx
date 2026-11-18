@@ -50,13 +50,11 @@ const ServerCard = ({ server, icon, where, busy, onCheck, onSignIn, onRemove }) 
             <Container layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%" wrap={false}>
                 <Container layout="flex" align="center" gap="xs" padding="none" wrap={false} minWidth="0">
                     <Icon name={icon} size="sm" color="primary" />
-                    <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                        <Typography size="sm" weight="semibold" truncate>{server.name}</Typography>
-                        <Typography size="xxs" color="muted" truncate title={where}>{where}</Typography>
-                    </Container>
+                    <Typography size="sm" weight="semibold" truncate>{server.name}</Typography>
                 </Container>
                 <Badge size="xs" color={HEALTH_COLORS[health.state] || 'error'}>{health.label}</Badge>
             </Container>
+            <Typography size="xxs" color="muted" truncate title={where}>{where}</Typography>
 
             {!ready && health.needs.map((need) => <Typography key={need} size="xxs">{need}</Typography>)}
             {!ready && health.detail && <Typography size="xxs" color="muted">Reported: {health.detail}</Typography>}
@@ -312,10 +310,7 @@ const ToolsPage = () => {
                                                     <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
                                                         <Container layout="flex" align="center" gap="sm" padding="none" wrap={false} minWidth="0">
                                                             <Icon name={APP_ICONS[entry.name] || 'FiGlobe'} size="md" color="primary" />
-                                                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
-                                                                <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
-                                                                <Typography size="xxs" color="muted">{entry.group}</Typography>
-                                                            </Container>
+                                                            <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
                                                         </Container>
                                                         <Button size="xs" color="primary" disabled={adding === entry.address} onClick={() => addApp(entry)}>
                                                             <Icon name={entry.signIn === 'key' ? 'FiKey' : 'FiPlus'} size="xs" />{adding === entry.address ? 'Adding…' : entry.signIn === 'key' ? 'Add with a key' : 'Add'}
