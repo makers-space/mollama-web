@@ -379,7 +379,9 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     );
 };
 
-const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onMore, onAll, loading }) => {
+const CATALOGUE_PAGE = 48;
+const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onPage, loading }) => {
+    const top = useRef(null);
     const [purpose, setPurpose] = useState('all');
     const [customName, setCustomName] = useState('');
     const [query, setQuery] = useState('');
@@ -397,6 +399,12 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
     }, [query]);
 
     if (!catalogue) return <Typography size="xs" color="muted">Working out which models fit this device…</Typography>;
+    const page = catalogue.page || 1;
+    const pages = Math.max(1, Math.ceil((catalogue.total || 0) / CATALOGUE_PAGE));
+    const turn = (next) => {
+        onPage(next);
+        top.current?.scrollIntoView({ block: 'start' });
+    };
 
     const jobFor = (tag) => jobs.find((job) => job.model === tag && job.status !== 'completed' && job.status !== 'cancelled');
     const shown = catalogue.models.filter((model) => purpose === 'all' || model.goodFor.includes(purpose));
@@ -414,7 +422,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
     );
 
     return (
-        <Container layout="flex-column" gap="md" padding="none" width="100%">
+        <Container ref={top} layout="flex-column" gap="md" padding="none" width="100%">
             <Container layout="flex-column" gap="xs" padding="none" width="100%">
                 <Container layout="flex" gap="xs" padding="none" align="center" width="100%" wrap={false}>
                     <Input
@@ -429,11 +437,6 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                     <Button size="sm" disabled={loading} onClick={() => { searched.current = query.trim(); onSearch(query.trim()); }}>
                         <Icon name="FiSearch" size="xs" />Search
                     </Button>
-                    {catalogue.more && (
-                        <Button size="sm" color="secondary" disabled={loading} onClick={onAll} title="Load every model and size at once">
-                            <Icon name="FiList" size="xs" />Show all
-                        </Button>
-                    )}
                 </Container>
             </Container>
             <Row>
@@ -479,13 +482,14 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                 </>
             )}
 
-            {catalogue.more && (
-                <Container layout="flex" justify="center" gap="xs" padding="none" width="100%">
-                    <Button size="sm" color="secondary" disabled={loading} onClick={onMore}>
-                        <Icon name="FiChevronDown" size="xs" />Show more models
+            {pages > 1 && (
+                <Container layout="flex" align="center" justify="center" gap="sm" padding="none" width="100%">
+                    <Button size="sm" color="secondary" disabled={loading || page <= 1} onClick={() => turn(page - 1)}>
+                        <Icon name="FiChevronLeft" size="xs" />Previous
                     </Button>
-                    <Button size="sm" color="secondary" disabled={loading} onClick={onAll}>
-                        <Icon name="FiList" size="xs" />Show all {catalogue.total}
+                    <Typography size="xs" color="muted">Page {page} of {pages} · {catalogue.total} models</Typography>
+                    <Button size="sm" color="secondary" disabled={loading || page >= pages} onClick={() => turn(page + 1)}>
+                        Next<Icon name="FiChevronRight" size="xs" />
                     </Button>
                 </Container>
             )}
@@ -871,12 +875,10 @@ const ModelsPage = () => {
         setCatalogueLoading(true);
         try {
             const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(all ? { all: true } : {}) });
-            setCatalogue((now) => (page > 1 && now
-                ? { ...result, models: [...now.models, ...result.models.filter((model) => !now.models.some((shown) => shown.tag === model.tag)).map((model) => ({ ...model, pick: null }))] }
-                : result));
+            setCatalogue(result);
         } catch (error) {
             notifyError(describeError(error, 'The model list could not be loaded.'));
-            setCatalogue((now) => (page > 1 && now ? { ...now, more: false } : { models: [], unavailable: true, query: q, page: 1, more: false }));
+            setCatalogue((now) => (page > 1 && now ? now : { models: [], unavailable: true, query: q, page: 1, more: false }));
         } finally {
             setCatalogueLoading(false);
         }
@@ -1151,8 +1153,7 @@ const ModelsPage = () => {
                         onDownload={download}
                         loading={catalogueLoading}
                         onSearch={(q) => device && loadCatalogue(device.id, { q })}
-                        onMore={() => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', page: (catalogue.page || 1) + 1 })}
-                        onAll={() => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', all: true })}
+                        onPage={(page) => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', page })}
                     />
                 )}
                 {device?.online && tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} elsewhere={elsewhere} />}
