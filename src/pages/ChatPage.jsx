@@ -1296,6 +1296,7 @@ const Message = ({ message, isLast, busy, onRegenerate, onEdit }) => {
 };
 
 const liveStatus = (live) => {
+    if (live.stopping) return 'Stopped.';
     if (live.ahead > 0) return `Waiting for the model — ${live.ahead} ahead of you`;
     if (!live.started) return 'Sending…';
     if (live.note) return live.note;
@@ -1387,6 +1388,8 @@ const ChatPage = () => {
 
     const abortRef = useRef(null);
     const turnRef = useRef(null);
+    // The chat whose reply the person stopped. From that moment nothing more of it is drawn, whatever is still on its way.
+    const stoppedRef = useRef(null);
     const bottomRef = useRef(null);
     const followRef = useRef(true);
     const idleLive = () => ({ chatId: null, target: null, joined: false, seq: 0, syncing: false, buffer: [], lastAt: 0 });
@@ -1678,6 +1681,7 @@ const ChatPage = () => {
     };
 
     const applyEvent = (event) => {
+        if (stoppedRef.current && stoppedRef.current === turnRef.current) return;
         if (event.type === 'queued') setLive((now) => now && { ...now, ahead: event.ahead });
         if (event.type === 'start') setLive((now) => now && { ...now, started: true, ahead: null, sharing: event.sharing || 0, loaded: event.loaded !== false });
         if (event.type === 'note') setLive((now) => now && { ...now, note: event.text });
@@ -1847,6 +1851,7 @@ const ChatPage = () => {
         const controller = new AbortController();
         abortRef.current = controller;
         turnRef.current = target.id;
+        stoppedRef.current = null;
         streamingRef.current = target.id;
         setLive(state);
         let failure = null;
@@ -1872,6 +1877,14 @@ const ChatPage = () => {
         settle(target);
     };
 
+    const stopReply = () => {
+        const id = turnRef.current;
+        if (!id) return;
+        stoppedRef.current = id;
+        setLive((now) => now && { ...now, stopping: true, permission: null });
+        chatService.stop(id).catch(() => {});
+    };
+
     const settle = async (target) => {
         let next = target;
         try {
@@ -1885,6 +1898,7 @@ const ChatPage = () => {
             joinReply(next);
             return;
         }
+        stoppedRef.current = null;
         setLive(null);
         loadChats(search);
         loadModels();
@@ -2307,7 +2321,7 @@ const ChatPage = () => {
                         ))}
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                {live.steps?.length > 0 && <Steps steps={live.steps} live />}
+                                {live.steps?.length > 0 && <Steps steps={live.steps} live={!live.stopping} />}
                                 {live.permission && (
                                     <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false} borderColor="primary">
                                         <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
@@ -2326,10 +2340,10 @@ const ChatPage = () => {
                                         </ButtonGroup>
                                     </Card>
                                 )}
-                                {live.thinking && <Thinking text={live.thinking} startOpen />}
-                                {live.content
-                                    ? <BlockContext.Provider value={LIVE_BLOCKS}><Markdown text={live.content} /></BlockContext.Provider>
-                                    : (
+                                {live.thinking && <Thinking text={live.thinking} startOpen={!live.stopping} />}
+                                {live.content && <BlockContext.Provider value={LIVE_BLOCKS}><Markdown text={live.content} /></BlockContext.Provider>}
+                                {live.content && live.stopping && <Typography size="sm" color="muted">Stopped before it finished.</Typography>}
+                                {!live.content && (
                                         <Typography key={liveStatus(live)} color="secondary" size="xxs" animation="typewriter">{liveStatus(live)}</Typography>
                                     )}
                             </Container>
@@ -2504,7 +2518,7 @@ const ChatPage = () => {
                                     </Container>
                                 </Container>
                             </Pop>
-                            {busy && <Button size="xs" color="error" title="Stop" aria-label="Stop" onClick={() => turnRef.current && chatService.stop(turnRef.current).catch(() => {})}><Icon name="FiSquare" size="xs" /></Button>}
+                            {busy && !live?.stopping && <Button size="xs" color="error" title="Stop" aria-label="Stop" onClick={stopReply}><Icon name="FiSquare" size="xs" /></Button>}
                             <Button size="xs" color="primary" title={busy ? 'Send when this reply is finished' : 'Send'} aria-label="Send" disabled={!text.trim() || noModels} onClick={() => sendText(text)} {...guide.tip('chat.send')}><Icon name="FiArrowUp" size="xs" /></Button>
                         </Container>
                     </Card>
