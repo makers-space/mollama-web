@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input, Select, ProgressBar } from '@components/Components';
+import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input, Select, ProgressBar, Pagination } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
 import { deviceService, modelService, providerService, describeError, useGuide } from '../client/ai.client';
 
@@ -483,14 +483,9 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
             )}
 
             {pages > 1 && (
-                <Container layout="flex" align="center" justify="center" gap="sm" padding="none" width="100%">
-                    <Button size="sm" color="secondary" disabled={loading || page <= 1} onClick={() => turn(page - 1)}>
-                        <Icon name="FiChevronLeft" size="xs" />Previous
-                    </Button>
+                <Container layout="flex-column" align="center" gap="xs" padding="none" width="100%">
+                    <Pagination size="md" span={9} page={page} pages={pages} disabled={loading} onPage={turn} width="100%" />
                     <Typography size="xs" color="muted">Page {page} of {pages} · {catalogue.total} models</Typography>
-                    <Button size="sm" color="secondary" disabled={loading || page >= pages} onClick={() => turn(page + 1)}>
-                        Next<Icon name="FiChevronRight" size="xs" />
-                    </Button>
                 </Container>
             )}
 
