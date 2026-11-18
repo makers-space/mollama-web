@@ -330,7 +330,12 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     const busy = job && ['queued', 'downloading'].includes(job.status);
     let action = null;
 
-    if (model.cloudOnly) action = <Button size="xs" color="secondary" onClick={() => window.dispatchEvent(new CustomEvent('models-open-online'))}><Icon name="FiCloud" size="xs" />Use online</Button>;
+    const useOnline = (model.cloudOnly || model.online) && (
+        <Button size="xs" color="secondary" title="Run it on Ollama's computers with your own Ollama key" onClick={() => window.dispatchEvent(new CustomEvent('models-open-online'))}>
+            <Icon name="FiCloud" size="xs" />Use online
+        </Button>
+    );
+    if (model.cloudOnly) action = null;
     else if (model.installed) action = <Badge size="xs" color="success">Installed</Badge>;
     else if (busy) action = <Badge size="xs" color="primary">{job.status === 'queued' ? 'Waiting' : `Downloading ${job.percent}%`}</Badge>;
     else if (!model.fit.fits) action = <Badge size="xs" color="error">Too large</Badge>;
@@ -365,7 +370,10 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
                             : [`${gb(model.sizeMb)}`, model.fit.tokensPerSecond ? speedWords(model.fit.tokensPerSecond) : null].filter(Boolean).join(' · ')}
                     </Typography>
                 </Container>
-                {action}
+                <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                    {useOnline}
+                    {action}
+                </Container>
             </Row>
         </Card>
     );
