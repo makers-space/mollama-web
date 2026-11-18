@@ -189,6 +189,14 @@ export const providerService = {
     remove: (id) => api.delete(`/providers/${id}`)
 };
 
+// Skills: the library every account has, and the ones a person added by address.
+export const skillService = {
+    list: () => api.get('/skills'),
+    read: (id) => api.get(`/skills/${id}`),
+    add: (address) => api.post('/skills', { address }),
+    remove: (id) => api.delete(`/skills/${id}`)
+};
+
 export const toolService = {
     list: () => api.get('/tools/servers'),
     catalogue: () => api.get('/tools/catalogue'),

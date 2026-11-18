@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useSearchParams } from 'react-router-dom';
-import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Divider, Icon, Input } from '@components/Components';
+import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Divider, Icon, Input, Select, Genie, Pagination } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { toolService, deviceService, describeError } from '../client/ai.client';
+import { toolService, skillService, deviceService, describeError } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
 // Each listed app's own logo, where the icon sets have one. The few without one get a plain icon for what they do.
@@ -86,10 +88,199 @@ const ServerCard = ({ server, icon, where, busy, onCheck, onSignIn, onRemove }) 
     );
 };
 
+const tokensOf = (skill) => `${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`;
+const PARTLY = 'Written for an agent that can run commands or open files. Its guidance works in a chat; the steps that need those do not yet.';
+
+const SkillCard = ({ skill, onView, children }) => (
+    <Card padding="sm" width="100%" minWidth="0" hover={false}>
+        <Container layout="flex-column" gap="xs" padding="none" width="100%" minWidth="0">
+            <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                <Typography size="xs" weight="semibold" truncate title={skill.name}>{skill.name}</Typography>
+                <Typography size="xxs" color="muted">{tokensOf(skill)}</Typography>
+            </Container>
+            <Typography size="xxs" color="muted" truncate title={skill.description}>{skill.description || 'No description.'}</Typography>
+            <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                {skill.needs?.length > 0 ? <Badge size="xxs" color="warning" title={PARTLY}>Guidance only</Badge> : <Container padding="none" />}
+                <ButtonGroup size="xxs" selectable={false} wrap={false} justify="end">
+                    <Button size="xxs" variant="ghost" onClick={(event) => onView(skill, event.currentTarget)}>View</Button>
+                    {children}
+                </ButtonGroup>
+            </Container>
+        </Container>
+    </Card>
+);
+
+const SkillsView = () => {
+    const { success, error: showError, confirm } = useNotification();
+    const [data, setData] = useState(null);
+    const [failed, setFailed] = useState(false);
+    const [find, setFind] = useState('');
+    const [source, setSource] = useState('all');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(12);
+    const [address, setAddress] = useState('');
+    const [adding, setAdding] = useState(false);
+    const [open, setOpen] = useState(null);
+    const trigger = useRef(null);
+
+    const load = useCallback(() => {
+        skillService.list().then((result) => {
+            setData(result);
+            setFailed(false);
+        }).catch(() => setFailed(true));
+    }, []);
+    useEffect(() => {
+        load();
+    }, [load]);
+
+    const viewSkill = async (skill, element) => {
+        trigger.current = element;
+        setOpen({ ...skill, text: null });
+        try {
+            const whole = (await skillService.read(skill.id)).skill;
+            setOpen((now) => (now && now.id === whole.id ? whole : now));
+        } catch (error) {
+            setOpen(null);
+            showError(describeError(error, 'This skill could not be opened.'));
+        }
+    };
+    const add = async () => {
+        setAdding(true);
+        try {
+            const added = (await skillService.add(address.trim())).skill;
+            success(`${added.name} was added. Turn it on in a chat's Skills.`);
+            setAddress('');
+            load();
+        } catch (error) {
+            showError(describeError(error, 'This skill could not be added.'));
+        }
+        setAdding(false);
+    };
+    const remove = async (skill) => {
+        if (!(await confirm(`Remove ${skill.name}? Chats that use it carry on without it.`, { confirmLabel: 'Remove', color: 'error' }))) return;
+        try {
+            await skillService.remove(skill.id);
+            success(`${skill.name} was removed.`);
+            load();
+        } catch (error) {
+            showError(describeError(error, 'This skill could not be removed.'));
+        }
+    };
+    const readAgain = async (skill) => {
+        try {
+            await skillService.add(skill.credit);
+            success(`${skill.name} was read again from its address.`);
+            load();
+        } catch (error) {
+            showError(describeError(error, 'This skill could not be read again.'));
+        }
+    };
+
+    if (failed) {
+        return (
+            <Card padding="md" width="100%" hover={false}>
+                <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                    <Typography size="sm" weight="semibold">The skills could not be loaded.</Typography>
+                    <Button size="sm" onClick={load}>Try again</Button>
+                </Container>
+            </Card>
+        );
+    }
+    if (!data) return <Typography size="xs" color="muted">Loading the skills…</Typography>;
+
+    const mine = (data.skills || []).filter((skill) => skill.source === 'mine');
+    const suggested = (data.skills || []).filter((skill) => skill.suggested);
+    const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const library = (data.skills || [])
+        .filter((skill) => skill.source !== 'mine' && (source === 'all' || skill.source === source))
+        .filter((skill) => words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)));
+    const pages = Math.max(1, Math.ceil(library.length / pageSize));
+    const shown = library.slice((Math.min(page, pages) - 1) * pageSize, Math.min(page, pages) * pageSize);
+
+    return (
+        <Container layout="flex-column" gap="md" padding="none" width="100%">
+            <Container layout="flex" align="start" gap="lg" padding="none" width="100%" wrap={false}>
+                <Container layout="flex-column" gap="md" padding="none" flexFill minWidth="0">
+                    <Section title="Suggested for small models" note="Short skills that work as a conversation and need nothing extra, so a small model can follow them." />
+                    <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
+                        {suggested.map((skill) => <SkillCard key={skill.id} skill={skill} onView={viewSkill} />)}
+                    </Container>
+
+                    <Section title={`Library (${library.length})`} note="Skills from open projects, kept as their authors wrote them. Turn them on in a chat's Skills, up to eight at a time.">
+                        <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="460px">
+                            <Input size="sm" width="100%" placeholder="Search skills" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} aria-label="Search skills" />
+                            <Select
+                                size="sm"
+                                width="220px"
+                                value={source}
+                                options={[{ value: 'all', label: 'All projects' }, ...(data.sources || []).filter((entry) => entry.id !== 'mine').map((entry) => ({ value: entry.id, label: `${entry.name} (${entry.count})` }))]}
+                                onChange={(chosen) => { setSource(String(chosen?.target?.value ?? chosen)); setPage(1); }}
+                                aria-label="Show skills from"
+                            />
+                        </Container>
+                    </Section>
+                    {shown.length === 0 && <Typography size="xs" color="muted">No skill matches.</Typography>}
+                    <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
+                        {shown.map((skill) => <SkillCard key={skill.id} skill={skill} onView={viewSkill} />)}
+                    </Container>
+                    {library.length > 12 && (
+                        <Pagination page={Math.min(page, pages)} pages={pages} onPage={setPage} pageSize={pageSize} pageSizes={[12, 24, 48]} onPageSize={(size) => { setPageSize(size); setPage(1); }} size="xs" padding="none" />
+                    )}
+
+                    <Section title="Always sent" note="What a chat is told besides its skills. Read them here to see exactly what shapes the replies." />
+                    <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
+                        {(data.always || []).map((guide) => <SkillCard key={guide.id} skill={guide} onView={viewSkill} />)}
+                    </Container>
+                </Container>
+                <Divider orientation="vertical" />
+                <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
+                    <Section title={`My skills (${mine.length})`} note="Added by address and kept with your account, so every app you sign in to has them." />
+                    {mine.length === 0 && <Icon name="MdLinkOff" size="xs" color="error" title="No skills of your own yet" aria-label="No skills of your own yet" />}
+                    {mine.map((skill) => (
+                        <SkillCard key={skill.id} skill={skill} onView={viewSkill}>
+                            <Button size="xxs" variant="ghost" title="Read the skill again from its address" onClick={() => readAgain(skill)}>Read again</Button>
+                            <Button size="xxs" variant="ghost" color="error" onClick={() => remove(skill)}>Remove</Button>
+                        </SkillCard>
+                    ))}
+                </Container>
+            </Container>
+
+            <Card padding="md" width="100%" hover={false}>
+                <Container layout="flex-column" gap="sm" padding="none" width="100%">
+                    <Section title="Add a skill by its address" note="Paste the address of a SKILL.md file, or of the folder on GitHub that holds one. Only its text is read; scripts and other files are not." />
+                    <Container layout="flex" wrap={false} align="end" gap="sm" padding="none" width="100%">
+                        <Input size="sm" width="100%" label="Address" placeholder="https://github.com/owner/project/tree/main/skills/name" value={address} onChange={(event) => setAddress(event.target.value)} />
+                        <Button size="sm" color="primary" disabled={adding || !/^https:\/\/\S+$/.test(address.trim()) || mine.length >= (data.maxOwnSkills || 50)} onClick={add}>{adding ? 'Reading…' : 'Add'}</Button>
+                    </Container>
+                    <Typography size="xxs" color="muted">A skill becomes instructions your models follow, so add only skills from people you trust, and read one before you use it.</Typography>
+                </Container>
+            </Card>
+
+            <Genie visible={Boolean(open)} onClose={() => setOpen(null)} triggerRef={trigger} variant="popover" width="720px" maxWidth="94vw" maxHeight="84vh" padding="sm">
+                {open && (
+                    <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" maxHeight="78vh" overflow="auto">
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
+                            <Typography size="sm" weight="semibold">{open.name}</Typography>
+                            <Typography size="xxs" color="muted">{tokensOf(open)}</Typography>
+                        </Container>
+                        {open.description && <Typography size="xs" color="muted">{open.description}</Typography>}
+                        {open.credit && <Typography size="xxs" color="muted">{`From ${open.credit}`}</Typography>}
+                        {open.needs?.length > 0 && <Typography size="xxs" color="warning">{PARTLY}</Typography>}
+                        <Divider margin="xs" />
+                        {open.text === null
+                            ? <Typography size="xs" color="muted">Reading the skill…</Typography>
+                            : <Typography as="div" size="xs"><ReactMarkdown remarkPlugins={[remarkGfm]}>{open.text}</ReactMarkdown></Typography>}
+                    </Container>
+                )}
+            </Genie>
+        </Container>
+    );
+};
+
 const ToolsPage = () => {
     const { success, error: showError, confirm } = useNotification();
     const [params, setParams] = useSearchParams();
-    const [view, setView] = useState(params.get('view') === 'local' ? 'local' : 'remote');
+    const [view, setView] = useState(['local', 'skills'].includes(params.get('view')) ? params.get('view') : 'remote');
     const [servers, setServers] = useState(null);
     const [devices, setDevices] = useState([]);
     const [apps, setApps] = useState([]);
@@ -250,7 +441,7 @@ const ToolsPage = () => {
 
     const pick = (next) => {
         setView(next);
-        setParams(next === 'local' ? { view: 'local' } : {}, { replace: true });
+        setParams(next === 'remote' ? {} : { view: next }, { replace: true });
     };
     const computerName = (id) => devices.find((device) => device.id === id)?.name || 'a computer that is no longer linked';
     const remotes = (servers || []).filter((server) => server.kind === 'remote');
@@ -269,7 +460,9 @@ const ToolsPage = () => {
                     <Container layout="flex-column" gap="none" padding="none" minWidth="0">
                         <Typography as="h1" size="2xl" weight="bold" animation="blur" animationDuration={600}>Tools</Typography>
                         <Typography size="xs" color="muted">
-                            {view === 'remote'
+                            {view === 'skills'
+                                ? 'Instructions that teach a model how to do a kind of work. Read them here, add your own, and turn them on in a chat.'
+                                : view === 'remote'
                                 ? 'Apps that live online. Mollama connects to them from its own server, so they work from any of your devices at any time.'
                                 : 'Apps on your own computer. Mollama reaches them through the Mollama desktop app there, so that computer has to be on with the desktop app open.'}
                         </Typography>
@@ -277,12 +470,14 @@ const ToolsPage = () => {
                     <ButtonGroup size="sm" selectable={false} wrap={false} justify="end">
                         <Button size="sm" color={view === 'remote' ? 'primary' : 'secondary'} selected={view === 'remote'} onClick={() => pick('remote')}><Icon name="FiGlobe" size="xs" />Remote{remotes.length > 0 ? ` (${remotes.length})` : ''}</Button>
                         <Button size="sm" color={view === 'local' ? 'primary' : 'secondary'} selected={view === 'local'} onClick={() => pick('local')}><Icon name="FiMonitor" size="xs" />Local{locals.length > 0 ? ` (${locals.length})` : ''}</Button>
+                        <Button size="sm" color={view === 'skills' ? 'primary' : 'secondary'} selected={view === 'skills'} onClick={() => pick('skills')}><Icon name="FiZap" size="xs" />Skills</Button>
                     </ButtonGroup>
                 </Container>
                 <Container layout="flex" justify="center" padding="none" width="100%" flexFill minHeight="0" overflow="auto">
                     <Container layout="flex-column" gap="md" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
-                        {servers === null && !failed && <Typography size="xs" color="muted">Loading your tools…</Typography>}
-                        {failed && (
+                        {view === 'skills' && <SkillsView />}
+                        {servers === null && !failed && view !== 'skills' && <Typography size="xs" color="muted">Loading your tools…</Typography>}
+                        {failed && view !== 'skills' && (
                             <Card padding="md" width="100%" hover={false}>
                                 <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
                                     <Typography size="sm" weight="semibold">Your tools could not be loaded.</Typography>

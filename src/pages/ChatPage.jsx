@@ -1532,7 +1532,7 @@ const ChatPage = () => {
     const shownSkills = useMemo(() => {
         const words = skillSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
         return skills
-            .filter((skill) => (skillSource === 'all' ? true : skillSource === 'on' ? activeSkills.includes(skill.id) : skill.source === skillSource))
+            .filter((skill) => (skillSource === 'all' ? true : skillSource === 'on' ? activeSkills.includes(skill.id) : skillSource === 'suggested' ? skill.suggested : skill.source === skillSource))
             .filter((skill) => words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)))
             .sort((a, b) => Number(activeSkills.includes(b.id)) - Number(activeSkills.includes(a.id)));
     }, [skills, skillSearch, skillSource, activeSkills.join(',')]);
@@ -2437,7 +2437,7 @@ const ChatPage = () => {
                                 size="xs"
                                 width="190px"
                                 value={skillSource}
-                                options={[{ value: 'all', label: 'All projects' }, { value: 'on', label: `Turned on (${activeSkills.length})` }, ...skillSources.map((source) => ({ value: source.id, label: `${source.name} (${source.count})` }))]}
+                                options={[{ value: 'all', label: 'All projects' }, { value: 'on', label: `Turned on (${activeSkills.length})` }, { value: 'suggested', label: 'Suggested for small models' }, ...skillSources.map((source) => ({ value: source.id, label: `${source.name} (${source.count})` }))]}
                                 onChange={(chosen) => setSkillSource(String(chosen?.target?.value ?? chosen))}
                                 aria-label="Show skills from"
                             />
@@ -2451,7 +2451,7 @@ const ChatPage = () => {
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
                                 <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
                                     <Typography size="xs" truncate>{skill.name}</Typography>
-                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Written for an agent that can run commands or open files. Its guidance works here; the steps that need those do not yet.">Partly works</Badge>}
+                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Written for an agent that can run commands or open files. Its guidance works here; the steps that need those do not yet.">Guidance only</Badge>}
                                     <Typography size="xxs" color="muted">{`${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`}</Typography>
                                 </Container>
                                 <Typography size="xxs" color="muted" truncate>{skill.description}</Typography>
