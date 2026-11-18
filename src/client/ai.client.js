@@ -207,8 +207,8 @@ export const deviceService = {
     removeDevice: (id) => api.delete(`/devices/${id}`),
     pauseDevice: (id) => api.post(`/devices/${id}/pause`, {}),
     resumeDevice: (id) => api.post(`/devices/${id}/resume`, {}),
-    // A computer that can run a model right now: connected, not paused, Ollama running and at least one model on it.
-    ready: (device) => Boolean(device?.online && !device.paused && device.ollama?.available && device.ollama.modelCount > 0),
+    // A computer that can chat right now: connected, not paused, Ollama running and at least one model on it that can chat.
+    ready: (device) => Boolean(device?.online && !device.paused && device.ollama?.available && (device.ollama.chatCount ?? device.ollama.modelCount) > 0),
     chosen: chosenDevice,
     choose(id) {
         try {
@@ -271,7 +271,7 @@ export const pickerMemory = {
         if (!pickerOwner) return;
         keep('mollama-picker-devices', {
             current: current || null,
-            devices: devices.map(({ id, name, kind, online, paused, ollama }) => ({ id, name, kind, online, paused, ollama: { available: Boolean(ollama?.available), modelCount: ollama?.modelCount || 0 } }))
+            devices: devices.map(({ id, name, kind, online, paused, ollama }) => ({ id, name, kind, online, paused, ollama: { available: Boolean(ollama?.available), modelCount: ollama?.modelCount || 0, chatCount: ollama?.chatCount ?? ollama?.modelCount ?? 0 } }))
         });
     },
     models: (deviceId) => keptModels.get(String(deviceId || 'default')) || null,

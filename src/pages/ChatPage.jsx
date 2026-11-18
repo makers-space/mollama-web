@@ -2334,7 +2334,9 @@ const ChatPage = () => {
                                                 <Row key={device.id} icon={device.kind === 'cloud' ? 'FiCloud' : 'FiMonitor'} label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online || device.paused} onClick={() => changeDevice(device.id)}>
                                                     {deviceService.ready(device)
                                                         ? <Icon name="FiCheckCircle" size="xs" color="success" title="Ready to use right now" aria-label="Ready to use right now" />
-                                                        : <Badge size="xxs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>}
+                                                        : device.online && !device.paused && device.ollama?.available && device.ollama.modelCount > 0
+                                                            ? <Badge size="xxs" color="warning" title="The models on this computer cannot chat. Download a chat model on the Models page.">No chat model</Badge>
+                                                            : <Badge size="xxs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>}
                                                 </Row>
                                             ))}
                                         </Container>
