@@ -962,6 +962,10 @@ const TOOL_FAILURES = {
 const isSearchStep = (step) => step.tool === 'web_search' || step.tool === 'web_fetch';
 // A step still under way reads as something happening now; a finished one as something done.
 const stepText = (step, active = false) => {
+    if (step.tool === 'Skill') {
+        if (step.failed) return `Could not open a skill called “${step.input}”`;
+        return active ? `Opening the ${step.input} skill…` : `Opened the ${step.input} skill`;
+    }
     if (!isSearchStep(step)) {
         if (step.failed) return `Could not use ${step.tool}: ${TOOL_FAILURES[step.failed] || TOOL_FAILURES.unreachable}`;
         return active ? `Using ${step.tool}…` : `Used ${step.tool}`;
@@ -976,7 +980,7 @@ const Steps = ({ steps, live = false }) => (
     <Container layout="flex-column" gap="none" padding="none" marginBottom="xs">
         {steps.map((step, index) => (
             <Container key={index} layout="flex" wrap={false} align="center" gap="xs" padding="none">
-                <Icon name={step.failed ? 'FiAlertTriangle' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
+                <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'Skill' ? 'FiZap' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
                 {!isSearchStep(step)
                     ? <Typography size="xxs" color={step.failed ? 'error' : 'muted'} truncate title={`What was sent: ${step.input}`}>{stepText(step, live && index === steps.length - 1)}</Typography>
                     : step.failed
