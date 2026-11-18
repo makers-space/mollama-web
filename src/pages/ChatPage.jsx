@@ -60,7 +60,7 @@ const Row = ({ icon, iconColor = 'primary', label, title, size = 'xs', color = '
     </Container>
 );
 
-const Pop = ({ label, icon, open, onOpen, onClose, width = '320px', tall = false, fab = false, iconOnly = false, iconEnd = false, children, ...button }) => {
+const Pop = ({ label, icon, endIcon = null, open, onOpen, onClose, width = '320px', tall = false, fab = false, iconOnly = false, iconEnd = false, children, ...button }) => {
     const trigger = useRef(null);
     const closedAt = useRef(0);
     const close = useCallback(() => {
@@ -82,12 +82,13 @@ const Pop = ({ label, icon, open, onOpen, onClose, width = '320px', tall = false
                     {icon && !iconEnd && <Icon name={icon} size="xs" />}
                     {!iconOnly && label}
                     {icon && iconEnd && <Icon name={icon} size="xs" />}
+                    {endIcon && <Icon name={endIcon} size="xs" />}
                 </Button>
             )}
             {createPortal(
                 <Genie key={width} visible={open} onClose={close} triggerRef={trigger} variant="popover" width={width} maxWidth="94vw" maxHeight={tall ? '88vh' : '72vh'} padding="xs">
                     {open && (
-                        <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" minHeight={tall ? 'min(520px, 70vh)' : undefined} maxHeight={tall ? '82vh' : '66vh'} overflow="auto">
+                        <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" maxHeight={tall ? '82vh' : '66vh'} overflow="auto">
                             {children}
                         </Container>
                     )}
@@ -1283,11 +1284,7 @@ const ChatPage = () => {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [working, setWorking] = useState(null);
     const [draftSetup, setDraftSetup] = useState(emptySetup);
-    const rememberedModel = (deviceId) => {
-        const name = pickerMemory.choice(deviceId);
-        return name && (pickerMemory.models(deviceId) || []).some((model) => model.name === name) ? name : null;
-    };
-    const [draftModel, setDraftModel] = useState(() => rememberedModel(draftDevice));
+    const [draftModel, setDraftModel] = useState(null);
     const [draftTitle, setDraftTitle] = useState('');
     const [exportFile, setExportFile] = useState(null);
     const [wide, setWide] = useState(() => window.innerWidth > 900);
@@ -1368,11 +1365,11 @@ const ChatPage = () => {
             const result = await modelService.installedOn(currentDevice);
             pickerMemory.keepModels(currentDevice, result.models);
             if (ask !== modelsAsk.current) return;
-            setModelState({ device: currentDevice, list: result.models.filter((model) => model.canChat !== false), loaded: true });
+            setModelState({ device: currentDevice, fresh: true, list: result.models.filter((model) => model.canChat !== false), loaded: true, others: result.models.filter((model) => model.canChat === false).map((model) => model.displayName || model.name), failed: false });
             if ('webSearch' in result) setWebSearch(Boolean(result.webSearch));
         } catch {
             if (ask !== modelsAsk.current) return;
-            setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: true });
+            setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: true, others: [], failed: true });
         }
     }, [currentDevice]);
 
@@ -1414,58 +1411,45 @@ const ChatPage = () => {
         });
     }, [chat?.id, chat?.updatedAt]);
 
-    const currentModel = chat?.model || draftModel;
+    const pickModel = (list, deviceId, wanted) => {
+        const has = (name) => Boolean(name) && list.some((model) => model.name === name);
+        if (has(wanted)) return wanted;
+        const remembered = pickerMemory.choice(deviceId);
+        if (has(remembered)) return remembered;
+        return (list.find((model) => model.ready) || list[0])?.name || null;
+    };
+    const currentModel = models.length > 0 ? pickModel(models, currentDevice, chat?.model || draftModel) : chat?.model || draftModel;
 
-    // A new chat names a model as soon as the computer's models are known: one already in memory if there is one.
-    // It is only a first guess, so the server's own choice replaces it when that arrives.
-    const guessRef = useRef(null);
+    // An open chat whose model is not on its computer is moved to the model shown, once that computer's own list has arrived.
     useEffect(() => {
-        if (chat || currentModel || models.length === 0) return;
-        const guess = (models.find((model) => model.ready) || models[0]).name;
-        guessRef.current = guess;
-        setDraftModel(guess);
-    }, [chat?.id, currentModel, models]);
-
-    // After moving to another computer, a model that is not on it is swapped for one that is.
-    useEffect(() => {
-        if (!modelsLoaded || models.length === 0 || !currentModel || models.some((model) => model.name === currentModel)) return;
-        if (!chat) setDraftModel(models[0].name);
-        else chatService.update(chat.id, { model: models[0].name }).then((result) => setChat(result.chat)).catch(() => {});
-    }, [modelsLoaded, models, currentModel, chat?.id]);
+        if (!chat || !modelState.fresh || modelState.device !== currentDevice || !currentModel || chat.model === currentModel) return;
+        chatService.update(chat.id, { model: currentModel }).then((result) => setChat(result.chat)).catch(() => {});
+    }, [chat?.id, chat?.model, modelState, currentDevice, currentModel]);
 
     const changeDevice = async (id) => {
-        closePop();
+        if (id === currentDevice) return;
+        pickerMemory.keepChoice(currentDevice, currentModel);
         deviceService.choose(id);
         if (!chat) {
             setDraftDevice(id);
-            setDraftModel(rememberedModel(id));
             return;
         }
-        // The picker changes at once; the server is told behind it, and the old choice comes back if it refuses.
-        const before = chat.device;
-        setChat((now) => now && { ...now, device: id });
+        // The computer and its model change together, in one step.
+        const model = pickModel(keptModels(id), id, chat.model) || chat.model;
+        const before = { device: chat.device, model: chat.model };
+        setChat((now) => now && { ...now, device: id, model });
         try {
-            const saved = (await chatService.update(chat.id, { device: id })).chat;
+            const saved = (await chatService.update(chat.id, { device: id, model })).chat;
             setChat((now) => (now && now.id === saved.id && now.device === id ? saved : now));
         } catch (error) {
-            setChat((now) => (now && now.device === id ? { ...now, device: before } : now));
+            setChat((now) => (now && now.device === id ? { ...now, ...before } : now));
             notifyError(describeError(error, 'The computer could not be changed.'));
         }
     };
 
     useEffect(() => {
-        if (!modelsLoaded || models.length === 0) return;
-        const guessed = !chat && Boolean(currentModel) && guessRef.current === currentModel;
-        modelService.loadModel(guessed ? null : currentModel || null)
-            .then((result) => {
-                if (result.model) pickerMemory.keepChoice(currentDevice, result.model);
-                if ((!currentModel || guessed) && result.model && guessRef.current === (guessed ? currentModel : guessRef.current)) {
-                    guessRef.current = null;
-                    setDraftModel(result.model);
-                }
-            })
-            .catch(() => {});
-    }, [modelsLoaded, models.length, currentModel]);
+        if (modelsLoaded && currentModel) modelService.loadModel(currentModel).catch(() => {});
+    }, [modelsLoaded, currentModel]);
 
     useEffect(() => {
         if (followRef.current) bottomRef.current?.scrollIntoView({ block: 'end' });
@@ -1529,7 +1513,7 @@ const ChatPage = () => {
     const ensureChat = async () => {
         if (chat) return chat;
         const body = setupBody();
-        if (draftModel) body.model = draftModel;
+        if (currentModel) body.model = currentModel;
         if (draftDevice) body.device = draftDevice;
         body.webSearch = draftSearch;
         const created = (await chatService.create(body)).chat;
@@ -1886,7 +1870,6 @@ const ChatPage = () => {
     const changeModel = async (name) => {
         closePop();
         pickerMemory.keepChoice(currentDevice, name);
-        guessRef.current = null;
         if (!chat) {
             setDraftModel(name);
             return;
@@ -1996,7 +1979,7 @@ const ChatPage = () => {
     const context = chat?.context;
     const pending = live ? [] : chat?.pendingAttachments || [];
     const noModels = modelsLoaded && models.length === 0;
-    const modelLabel = models.find((model) => model.name === currentModel)?.displayName || (!modelsLoaded ? 'Loading models…' : currentModel || 'Model');
+    const modelLabel = models.find((model) => model.name === currentModel)?.displayName || (!modelsLoaded ? 'Loading models…' : 'Choose a model');
     const articles = draftSetup.instructions;
     const articlesFull = articles.length >= MAX_ARTICLES;
 
@@ -2275,19 +2258,6 @@ const ChatPage = () => {
                                     </Container>
                                 )}
                             </Pop>
-                            <Button
-                                size="xs"
-                                variant="ghost"
-                                color={searchOn ? 'primary' : 'secondary'}
-                                selected={searchOn}
-                                disabled={!webSearch}
-                                title={!webSearch ? 'Web search is not set up on the server' : searchOn ? 'Web search is on for this chat. Click to turn it off.' : 'Web search is off for this chat. Click to turn it on.'}
-                                aria-label="Web search"
-                                aria-pressed={searchOn}
-                                onClick={toggleSearch}
-                            >
-                                <Icon name={searchOn ? 'FiGlobe' : 'FiSlash'} size="xs" />
-                            </Button>
                             <Input
                                 ref={fileInputRef}
                                 type="file"
@@ -2316,39 +2286,53 @@ const ChatPage = () => {
                                     </Typography>
                                 )}
                             </Container>
-                            {devices.length > 1 && (
-                                <Pop label={devices.find((device) => device.id === currentDevice)?.name || 'Computer'} icon="FiMonitor" iconEnd size="xs" open={pop === 'device'} onOpen={() => openPop('device')} onClose={closePop} width="330px">
-                                    {devices.map((device) => (
-                                        <Row key={device.id} icon="FiMonitor" label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online || device.paused} onClick={() => changeDevice(device.id)}>
-                                            {deviceService.ready(device)
-                                                ? <Icon name="FiCheckCircle" size="xs" color="success" title="Ready to use right now" aria-label="Ready to use right now" />
-                                                : <Badge size="xxs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>}
-                                        </Row>
-                                    ))}
-                                </Pop>
-                            )}
-                            <Pop label={modelLabel} icon="FiCpu" iconEnd size="xs" open={pop === 'model'} onOpen={() => openPop('model')} onClose={closePop} width="330px">
-                                {models.length === 0 && <Typography size="xs" color="muted">{modelsLoaded ? 'No model is installed yet.' : 'Loading the models on this computer…'}</Typography>}
-                                {models.map((model) => (
-                                    <Row key={model.name} label={model.displayName} size="xs" selected={model.name === currentModel} onClick={() => changeModel(model.name)}>
-                                        <Badge size="xxs" color={FIT_COLORS[model.fit?.verdict] || 'tertiary'}>{model.fit?.label || 'Fit unknown'}</Badge>
-                                        {model.ready && <Icon name="FiCheckCircle" size="xs" color="success" title="Loaded and ready to use right now" aria-label="Loaded and ready to use right now" />}
-                                    </Row>
-                                ))}
+                            <Pop
+                                label={devices.length > 1 ? `${devices.find((device) => device.id === currentDevice)?.name || 'Computer'} · ${modelLabel}` : modelLabel}
+                                icon={devices.length > 1 ? (devices.find((device) => device.id === currentDevice)?.kind === 'cloud' ? 'FiCloud' : 'FiMonitor') : null}
+                                endIcon="FiCpu"
+                                size="xs"
+                                open={pop === 'model'}
+                                onOpen={() => openPop('model')}
+                                onClose={closePop}
+                                width={devices.length > 1 ? '600px' : '330px'}
+                            >
+                                <Container layout="flex" wrap={false} align="stretch" gap="sm" padding="none" width="100%">
+                                    {devices.length > 1 && (
+                                        <Container layout="flex-column" gap="none" padding="none" width="50%" minWidth="0">
+                                            <Typography size="xxs" color="muted" weight="semibold">Run on</Typography>
+                                            {devices.map((device) => (
+                                                <Row key={device.id} icon={device.kind === 'cloud' ? 'FiCloud' : 'FiMonitor'} label={device.name} size="xs" selected={device.id === currentDevice} disabled={!device.online || device.paused} onClick={() => changeDevice(device.id)}>
+                                                    {deviceService.ready(device)
+                                                        ? <Icon name="FiCheckCircle" size="xs" color="success" title="Ready to use right now" aria-label="Ready to use right now" />
+                                                        : <Badge size="xxs" color={device.paused ? 'warning' : device.online ? 'success' : 'default'}>{device.paused ? 'Paused' : device.online ? 'Online' : 'Offline'}</Badge>}
+                                                </Row>
+                                            ))}
+                                        </Container>
+                                    )}
+                                    {devices.length > 1 && <Divider orientation="vertical" />}
+                                    <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                        {devices.length > 1 && <Typography size="xxs" color="muted" weight="semibold">Models</Typography>}
+                                        {models.length === 0 && (
+                                            <Typography size="xs" color="muted">
+                                                {!modelsLoaded ? 'Loading the models on this computer…'
+                                                    : modelState.device === currentDevice && modelState.failed ? 'The models on this computer could not be read just now. Try again in a moment.'
+                                                    : modelState.device === currentDevice && modelState.others?.length ? `The models here cannot chat: ${modelState.others.join(', ')}. Download a chat model on the Models page.`
+                                                    : 'No model is installed yet.'}
+                                            </Typography>
+                                        )}
+                                        {models.map((model) => (
+                                            <Row key={model.name} label={model.displayName} size="xs" selected={model.name === currentModel} onClick={() => changeModel(model.name)}>
+                                                <Badge size="xxs" color={FIT_COLORS[model.fit?.verdict] || 'tertiary'}>{model.fit?.label || 'Fit unknown'}</Badge>
+                                                {model.ready && <Icon name="FiCheckCircle" size="xs" color="success" title="Loaded and ready to use right now" aria-label="Loaded and ready to use right now" />}
+                                            </Row>
+                                        ))}
+                                    </Container>
+                                </Container>
                             </Pop>
                             {busy && <Button size="xs" color="error" title="Stop" aria-label="Stop" onClick={() => turnRef.current && chatService.stop(turnRef.current).catch(() => {})}><Icon name="FiSquare" size="xs" /></Button>}
                             <Button size="xs" color="primary" title={busy ? 'Send when this reply is finished' : 'Send'} aria-label="Send" disabled={!text.trim() || noModels} onClick={() => sendText(text)} {...guide.tip('chat.send')}><Icon name="FiArrowUp" size="xs" /></Button>
                         </Container>
                     </Card>
-                    <Container layout="flex" justify="center" padding="none" width="100%">
-                        <Typography size="xxs" color="muted">
-                            {devices.find((device) => device.id === currentDevice)?.kind === 'cloud'
-                                ? 'Replies are written by a model that runs online. What you type and attach in this chat is sent to that service, under your own account with it, and it is billed by them. Dictation is done by your browser, which may send your voice to its maker.'
-                                : searchOn
-                                ? 'Replies are written by a model running on this device. When the model searches the web, its search words go to the search service set on the server and the pages it opens are loaded by this server. Dictation is done by your browser, which may send your voice to its maker.'
-                                : `Replies are written by a model running on this device. Nothing you type or attach is sent to an outside AI service. ${webSearch ? 'Web search is off for this chat, so the model cannot look things up.' : 'Web search is off, so models cannot look things up; it is turned on by setting a search key on the server.'} Dictation is done by your browser, which may send your voice to its maker.`}
-                        </Typography>
-                    </Container>
                 </Centered>
                 </Container>
             </Container>
@@ -2373,6 +2357,13 @@ const ChatPage = () => {
                             <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
                         </Container>
                         {!modelUsesTools && <Typography size="xxs" color="muted">This model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                            <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                <Typography size="xs" truncate>Web search</Typography>
+                                <Typography size="xxs" color="muted" truncate>{webSearch ? 'Search words go to the search service set on the server' : 'Not set up on the server'}</Typography>
+                            </Container>
+                            <Switch size="xs" checked={searchOn} disabled={!webSearch} onChange={toggleSearch} aria-label="Web search" />
+                        </Container>
                         {tools.map((tool) => (
                         <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}>
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
@@ -2407,11 +2398,11 @@ const ChatPage = () => {
                             What the model should know or follow in this chat. Add as many pieces as you need: typed text, files, or ones you saved earlier.
                         </Typography>
                         {working && <Typography size="xs" color="muted">{working}</Typography>}
-                        {(tools.length > 0 || skills.length > 0) && (
+                        {(tools.length > 0 || skills.length > 0 || webSearch) && (
                             <Container layout="flex-column" gap="none" padding="none" width="100%">
-                                {tools.length > 0 && (
+                                {(tools.length > 0 || webSearch) && (
                                     <Row icon="FiTool" label="Tools" title="Choose the tools models may use in this chat" onClick={() => setView('tools')}>
-                                        <Typography size="xxs" color="muted">{modelUsesTools ? `${activeTools.length} on` : 'Not for this model'}</Typography>
+                                        <Typography size="xxs" color="muted">{`${activeTools.length + (searchOn ? 1 : 0)} on`}</Typography>
                                         <Icon name="FiChevronRight" size="xs" />
                                     </Row>
                                 )}

@@ -323,6 +323,7 @@ const ToolsPage = () => {
                                 )}
 
                                 </Container>
+                                <Divider orientation="vertical" />
                                 <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
                                     <Section title="Connected" note="What your models can use. Anything not ready says what it needs." />
                                     {remotes.length === 0 && <Typography size="xs" color="muted">Nothing connected yet.</Typography>}
@@ -386,6 +387,7 @@ const ToolsPage = () => {
                                 )}
 
                                 </Container>
+                                <Divider orientation="vertical" />
                                 <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
                                     <Section title="Connected" note="Tool servers on your computers. Anything not ready says what it needs." />
                                     {locals.length === 0 && <Typography size="xs" color="muted">Nothing connected yet.</Typography>}
