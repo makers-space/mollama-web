@@ -68,7 +68,7 @@ const ServerCard = ({ server, icon, where, busy, onCheck, onSignIn, onRemove }) 
                         <Icon name={showTools ? 'FiChevronDown' : 'FiChevronRight'} size="xs" />
                         {server.tools.length === 1 ? '1 tool' : `${server.tools.length} tools`}
                     </Button>
-                ) : <Typography size="xxs" color="muted">No tools yet</Typography>}
+                ) : <Icon name="MdLinkOff" size="sm" color="muted" title="No tools yet" aria-label="No tools yet" />}
                 <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
                     {canSignIn && <Button size="xxs" color="primary" disabled={busy} title="Opens the app's sign-in page in a new tab" onClick={() => onSignIn(server)}><Icon name="FiLogIn" size="xs" />Sign in</Button>}
                     <Button size="xxs" color="secondary" disabled={busy} onClick={() => onCheck(server)}><Icon name="FiRefreshCw" size="xs" />{busy ? 'Checking…' : 'Check'}</Button>
@@ -292,16 +292,8 @@ const ToolsPage = () => {
                         )}
 
                         {servers && view === 'remote' && (
-                            <>
-                                {remotes.length > 0 && (
-                                    <>
-                                        <Section title="Connected" note="What your models can use. Anything not ready says what it needs." />
-                                        <Container layout="grid" columns="auto" gap="sm" padding="none" width="100%" align="start">
-                                            {remotes.map((server) => <ServerCard key={server.id} server={server} icon={APP_ICONS[listed.get(server.address)?.name] || 'FiGlobe'} where={server.address} busy={Boolean(busy[server.id])} {...cardProps} />)}
-                                        </Container>
-                                    </>
-                                )}
-
+                            <Container layout="flex" align="start" gap="lg" padding="none" width="100%" wrap={false}>
+                                <Container layout="flex-column" gap="md" padding="none" flexFill minWidth="0">
                                 {apps.length > 0 && (
                                     <>
                                         <Section title="Apps ready to add" note="Each one is the maker's own tool server. Add it, then sign in to it.">
@@ -310,7 +302,7 @@ const ToolsPage = () => {
                                             </Container>
                                         </Section>
                                         {shownApps.length === 0 && <Typography size="xs" color="muted">{words ? 'No listed app matches. It can still be added by its address below.' : 'Every listed app is added.'}</Typography>}
-                                        <Container layout="grid" columns={4} gap="sm" padding="none" width="100%">
+                                        <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
                                             {shownApps.map((entry) => (
                                                 <Card key={entry.address} layout="flex-column" gap="xs" padding="md" width="100%" minWidth="0" hover={false} shadow={false}>
                                                     <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
@@ -355,24 +347,22 @@ const ToolsPage = () => {
                                         </Button>
                                     </Container>
                                 </Card>
-                            </>
+                                </Container>
+                                <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
+                                    <Section title="Connected" note="What your models can use. Anything not ready says what it needs." />
+                                    {remotes.length === 0 && <Typography size="xs" color="muted">Nothing connected yet.</Typography>}
+                                    {remotes.map((server) => <ServerCard key={server.id} server={server} icon={APP_ICONS[listed.get(server.address)?.name] || 'FiGlobe'} where={server.address} busy={Boolean(busy[server.id])} {...cardProps} />)}
+                                </Container>
+                            </Container>
                         )}
 
                         {servers && view === 'local' && (
-                            <>
-                                {locals.length > 0 && (
-                                    <>
-                                        <Section title="Connected" note="Tool servers on your computers. Anything not ready says what it needs." />
-                                        <Container layout="grid" columns="auto" gap="sm" padding="none" width="100%" align="start">
-                                            {locals.map((server) => <ServerCard key={server.id} server={server} icon="FiMonitor" where={`On ${computerName(server.device)}`} busy={Boolean(busy[server.id])} {...cardProps} />)}
-                                        </Container>
-                                    </>
-                                )}
-
+                            <Container layout="flex" align="start" gap="lg" padding="none" width="100%" wrap={false}>
+                                <Container layout="flex-column" gap="md" padding="none" flexFill minWidth="0">
                                 {localApps.length > 0 && (
                                     <>
                                         <Section title="Apps you can set up" note="Tool servers that run on your own computer. Choosing one shows what it needs and fills in the form below; nothing runs until you add it." />
-                                        <Container layout="grid" columns={4} gap="sm" padding="none" width="100%">
+                                        <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
                                             {localApps.map((entry) => (
                                                 <Card key={entry.name} layout="flex-column" gap="xs" padding="md" width="100%" minWidth="0" hover={false} shadow={false}>
                                                     <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
@@ -432,7 +422,13 @@ const ToolsPage = () => {
                                         </Typography>
                                     )}
                                 </Card>
-                            </>
+                                </Container>
+                                <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
+                                    <Section title="Connected" note="Tool servers on your computers. Anything not ready says what it needs." />
+                                    {locals.length === 0 && <Typography size="xs" color="muted">Nothing connected yet.</Typography>}
+                                    {locals.map((server) => <ServerCard key={server.id} server={server} icon="FiMonitor" where={`On ${computerName(server.device)}`} busy={Boolean(busy[server.id])} {...cardProps} />)}
+                                </Container>
+                            </Container>
                         )}
                     </Container>
                 </Container>

@@ -2351,48 +2351,61 @@ const ChatPage = () => {
             >
                 {view === 'files' && <FileBrowser mode="read" onPick={articleFromFile} onBack={() => setView('main')} />}
                 {view === 'saved' && <SavedInstructions onAdd={addArticle} onBack={() => setView('main')} full={articlesFull} />}
+                {view === 'tools' && (
+                    <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                            <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Tools</Button>
+                            <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
+                        </Container>
+                        {!modelUsesTools && <Typography size="xxs" color="muted">This model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
+                        {tools.map((tool) => (
+                        <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}>
+                            <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                <Typography size="xs" truncate>{tool.name}</Typography>
+                                <Typography size="xxs" color="muted" truncate>{tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}</Typography>
+                            </Container>
+                            <Switch size="xs" checked={activeTools.includes(tool.id)} disabled={!modelUsesTools || !tool.ready} onChange={() => toggleTool(tool.id)} aria-label={tool.name} />
+                        </Container>
+                        ))}
+                    </Container>
+                )}
+                {view === 'skills' && (
+                    <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                            <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Skills</Button>
+                            <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => setDraftSetup((now) => ({ ...now, skills: null }))}>Use defaults</Button>
+                        </Container>
+                        {skills.map((skill) => (
+                        <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={skill.description}>
+                            <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                <Typography size="xs" truncate>{skill.name}</Typography>
+                                <Typography size="xxs" color="muted" truncate>{skill.description}</Typography>
+                            </Container>
+                            <Switch size="xs" checked={activeSkills.includes(skill.id)} disabled={false} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
+                        </Container>
+                        ))}
+                    </Container>
+                )}
                 {view === 'main' && (
                     <>
                         <Typography size="xs" color="muted">
                             What the model should know or follow in this chat. Add as many pieces as you need: typed text, files, or ones you saved earlier.
                         </Typography>
                         {working && <Typography size="xs" color="muted">{working}</Typography>}
-                        {tools.length > 0 && (
-                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
-                                    <Typography size="xs" weight="semibold">Tools</Typography>
-                                    <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
-                                </Container>
-                                {!modelUsesTools && <Typography size="xxs" color="muted">This model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
-                                {tools.map((tool) => (
-                                    <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
-                                        <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
-                                            <Typography size="xs">{tool.name}</Typography>
-                                            <Typography size="xxs" color="muted">
-                                                {tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}
-                                            </Typography>
-                                        </Container>
-                                        <Switch size="sm" checked={activeTools.includes(tool.id)} disabled={!modelUsesTools || !tool.ready} onChange={() => toggleTool(tool.id)} aria-label={tool.name} />
-                                    </Container>
-                                ))}
-                                <Divider margin="xs" />
-                            </Container>
-                        )}
-                        {skills.length > 0 && (
-                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
-                                    <Typography size="xs" weight="semibold">Skills</Typography>
-                                    <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => setDraftSetup((now) => ({ ...now, skills: null }))}>Use defaults</Button>
-                                </Container>
-                                {skills.map((skill) => (
-                                    <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
-                                        <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
-                                            <Typography size="xs">{skill.name}</Typography>
-                                            <Typography size="xxs" color="muted">{skill.description}</Typography>
-                                        </Container>
-                                        <Switch size="sm" checked={activeSkills.includes(skill.id)} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
-                                    </Container>
-                                ))}
+                        {(tools.length > 0 || skills.length > 0) && (
+                            <Container layout="flex-column" gap="none" padding="none" width="100%">
+                                {tools.length > 0 && (
+                                    <Row icon="FiTool" label="Tools" title="Choose the tools models may use in this chat" onClick={() => setView('tools')}>
+                                        <Typography size="xxs" color="muted">{modelUsesTools ? `${activeTools.length} on` : 'Not for this model'}</Typography>
+                                        <Icon name="FiChevronRight" size="xs" />
+                                    </Row>
+                                )}
+                                {skills.length > 0 && (
+                                    <Row icon="FiZap" label="Skills" title="Choose the skills this chat uses" onClick={() => setView('skills')}>
+                                        <Typography size="xxs" color="muted">{`${activeSkills.length} on`}</Typography>
+                                        <Icon name="FiChevronRight" size="xs" />
+                                    </Row>
+                                )}
                                 <Divider margin="xs" />
                             </Container>
                         )}

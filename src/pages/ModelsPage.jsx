@@ -21,7 +21,6 @@ const PURPOSES = [
     { id: 'reasoning', label: 'Reasoning' }
 ];
 
-const PICK_LABELS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality', code: 'Best for code', reasoning: 'Best at reasoning' };
 const FIT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'tertiary' };
 const RESUMABLE = ['DOWNLOAD_INTERRUPTED', 'OLLAMA_DOWN', 'DISK_FULL'];
 const ABILITY_LABELS = { tools: 'Can use tools', vision: 'Can read images', thinking: 'Thinks step by step' };
@@ -353,7 +352,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
         <Card layout="flex-column" gap="xs" padding="md" width="100%" height="100%" minWidth="0" wrap={false}>
             <Row>
                 <Typography as="h3" size="sm" weight="semibold" truncate title={model.name}>{model.name}</Typography>
-                {model.pick && <Badge size="xs" color="primary">{PICK_LABELS[model.pick]}</Badge>}
+                {model.pickLabel && <Badge size="xs" color="primary" title={model.pickWhy}>{model.pickLabel}</Badge>}
             </Row>
             <Typography size="xxs" color="muted" font="monospace" truncate title="Its name on Ollama">{model.tag}</Typography>
             <Typography size="xs" color="muted">{model.description}</Typography>
@@ -380,11 +379,26 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
 };
 
 const PAGE_SIZES = [4, 8, 12, 24, 48];
+const SORTS = [
+    { value: 'fit', label: 'Best fit for this computer' },
+    { value: 'largest', label: 'Needs the most memory first' },
+    { value: 'smallest', label: 'Needs the least memory first' },
+    { value: 'popular', label: 'Most downloaded first' },
+    { value: 'name', label: 'Name, A to Z' }
+];
+const sortChoice = () => {
+    try {
+        const kept = localStorage.getItem('mollama-models-sort');
+        return SORTS.some((option) => option.value === kept) ? kept : 'fit';
+    } catch {
+        return 'fit';
+    }
+};
 const perPage = () => {
     const kept = Number(localStorage.getItem('mollama-models-per-page'));
     return PAGE_SIZES.includes(kept) ? kept : 12;
 };
-const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onPage, loading }) => {
+const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onPage, onSort, loading }) => {
     const top = useRef(null);
     const [purpose, setPurpose] = useState('all');
     const [customName, setCustomName] = useState('');
@@ -443,6 +457,9 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                     <Button size="sm" disabled={loading} onClick={() => { searched.current = query.trim(); onSearch(query.trim()); }}>
                         <Icon name="FiSearch" size="xs" />Search
                     </Button>
+                    <Container padding="none" width="240px">
+                        <Select size="sm" value={sortChoice()} options={SORTS} disabled={loading} onChange={(chosen) => onSort(String(chosen?.target?.value ?? chosen))} width="100%" />
+                    </Container>
                 </Container>
             </Container>
             <Row>
@@ -872,10 +889,10 @@ const ModelsPage = () => {
         return () => window.removeEventListener('models-open-online', open);
     }, []);
     // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
-    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, size = perPage(), all = false } = {}) => {
+    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, size = perPage(), sort = sortChoice(), all = false } = {}) => {
         setCatalogueLoading(true);
         try {
-            const ask = (withSize) => modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(withSize && !all ? { size } : {}), ...(all ? { all: true } : {}) });
+            const ask = (withSize) => modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(withSize && !all ? { size } : {}), ...(withSize && sort !== 'fit' ? { sort } : {}), ...(all ? { all: true } : {}) });
             // A server a little behind this page may not know the chosen number per page yet; it is then asked plainly.
             const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false) : Promise.reject(error)));
             result.size = result.size || 48;
@@ -1157,6 +1174,10 @@ const ModelsPage = () => {
                         onDownload={download}
                         loading={catalogueLoading}
                         onSearch={(q) => device && loadCatalogue(device.id, { q })}
+                        onSort={(sort) => {
+                            try { localStorage.setItem('mollama-models-sort', sort); } catch { /* kept for this visit only */ }
+                            if (device && catalogue) loadCatalogue(device.id, { q: catalogue.query || '', page: 1, sort });
+                        }}
                         onPage={(page, size) => {
                             localStorage.setItem('mollama-models-per-page', String(size));
                             if (device && catalogue) loadCatalogue(device.id, { q: catalogue.query || '', page, size });

@@ -158,7 +158,6 @@ const GRAPHICS_CARDS = [
 // A chip that shares its memory gives the graphics about two thirds of it, the same share the desktop app reports.
 const sharedGb = (memoryGb) => Math.round(((memoryGb * 2) / 3) * 10) / 10;
 const VERDICT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error' };
-const PICKS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality' };
 const gbText = (megabytes) => `${(megabytes / 1024) >= 10 ? Math.round(megabytes / 1024) : Number((megabytes / 1024).toFixed(1))} GB`;
 const speedText = (range) => (range ? `about ${range[0]} to ${range[1]} tokens a second` : null);
 
@@ -335,7 +334,7 @@ const Calculator = ({ user }) => {
             <Card key={model.tag} layout="flex-column" gap="xs" padding="md" width="100%" height="100%" minWidth="0" shadow={false} wrap={false}>
                 <Container layout="flex" justify="between" align="center" gap="sm" padding="none" width="100%" wrap={false}>
                     <Typography as="h3" size="sm" weight="semibold" truncate>{model.name}</Typography>
-                    {model.pick && <Badge size="xs" color="primary">{PICKS[model.pick]}</Badge>}
+                    {model.pickLabel && <Badge size="xs" color="primary" title={model.pickWhy}>{model.pickLabel}</Badge>}
                 </Container>
                 <Typography size="xs" color="muted">{model.description}</Typography>
                 <Container padding="none" flexFill />
