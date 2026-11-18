@@ -206,9 +206,9 @@ const SkillsView = () => {
                         {suggested.map((skill) => <SkillCard key={skill.id} skill={skill} onView={viewSkill} />)}
                     </Container>
 
-                    <Section title={`Library (${library.length})`} note="Skills from open projects, kept as their authors wrote them. Turn them on in a chat's Skills, up to eight at a time.">
+                    <Section title={`Library (${library.length})`} note="Skills from open projects. A chat is sent only the skills turned on for it, and nothing else. Turn them on in a chat's Skills, up to eight at a time; each switch is saved as you flip it.">
                         <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="460px">
-                            <Input size="sm" width="100%" placeholder="Search skills" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} aria-label="Search skills" />
+                            <Input type="search" size="sm" width="100%" placeholder="Search skills" value={find} onChange={(event) => { setFind(event.target.value); setPage(1); }} aria-label="Search skills" />
                             <Select
                                 size="sm"
                                 width="220px"
@@ -227,38 +227,33 @@ const SkillsView = () => {
                         <Pagination page={Math.min(page, pages)} pages={pages} onPage={setPage} pageSize={pageSize} pageSizes={[12, 24, 48]} onPageSize={(size) => { setPageSize(size); setPage(1); }} size="xs" padding="none" />
                     )}
 
-                    <Section title="Always sent" note="What a chat is told besides its skills. Read them here to see exactly what shapes the replies." />
-                    <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
-                        {(data.always || []).map((guide) => <SkillCard key={guide.id} skill={guide} onView={viewSkill} />)}
-                    </Container>
                 </Container>
                 <Divider orientation="vertical" />
                 <Container layout="flex-column" gap="sm" padding="none" width="340px" minWidth="340px">
-                    <Section title={`My skills (${mine.length})`} note="Added by address and kept with your account, so every app you sign in to has them." />
-                    {mine.length === 0 && <Icon name="MdLinkOff" size="xs" color="error" title="No skills of your own yet" aria-label="No skills of your own yet" />}
+                    <Section title={`My skills (${mine.length})`} note="Skills you add yourself. They are kept with your account, so every app you sign in to has them." />
+                    <Card padding="sm" width="100%" hover={false}>
+                        <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                            <Input type="search" size="sm" width="100%" label="Add a skill by its address" placeholder="https://github.com/owner/project/tree/main/skills/name" value={address} onChange={(event) => setAddress(event.target.value)} />
+                            <Typography size="xxs" color="muted">Paste the address of a SKILL.md file, or of the folder on GitHub that holds one. Only its text is read.</Typography>
+                            <Container layout="flex" justify="end" padding="none" width="100%">
+                                <Button size="sm" color="primary" disabled={adding || !/^https:\/\/\S+$/.test(address.trim()) || mine.length >= (data.maxOwnSkills || 50)} onClick={add}>{adding ? 'Reading…' : 'Add'}</Button>
+                            </Container>
+                        </Container>
+                    </Card>
+                    {mine.length === 0 && <Typography size="xs" color="muted">You have not added any skills yet. Once you add one it appears here, and you can turn it on in a chat.</Typography>}
                     {mine.map((skill) => (
                         <SkillCard key={skill.id} skill={skill} onView={viewSkill}>
                             <Button size="xxs" variant="ghost" title="Read the skill again from its address" onClick={() => readAgain(skill)}>Read again</Button>
                             <Button size="xxs" variant="ghost" color="error" onClick={() => remove(skill)}>Remove</Button>
                         </SkillCard>
                     ))}
+                    <Typography size="xxs" color="muted">A skill becomes instructions your models follow, so add only skills from people you trust, and read one before you use it.</Typography>
                 </Container>
             </Container>
 
-            <Card padding="md" width="100%" hover={false}>
-                <Container layout="flex-column" gap="sm" padding="none" width="100%">
-                    <Section title="Add a skill by its address" note="Paste the address of a SKILL.md file, or of the folder on GitHub that holds one. Only its text is read; scripts and other files are not." />
-                    <Container layout="flex" wrap={false} align="end" gap="sm" padding="none" width="100%">
-                        <Input size="sm" width="100%" label="Address" placeholder="https://github.com/owner/project/tree/main/skills/name" value={address} onChange={(event) => setAddress(event.target.value)} />
-                        <Button size="sm" color="primary" disabled={adding || !/^https:\/\/\S+$/.test(address.trim()) || mine.length >= (data.maxOwnSkills || 50)} onClick={add}>{adding ? 'Reading…' : 'Add'}</Button>
-                    </Container>
-                    <Typography size="xxs" color="muted">A skill becomes instructions your models follow, so add only skills from people you trust, and read one before you use it.</Typography>
-                </Container>
-            </Card>
-
             <Genie visible={Boolean(open)} onClose={() => setOpen(null)} triggerRef={trigger} variant="popover" width="720px" maxWidth="94vw" maxHeight="84vh" padding="sm">
                 {open && (
-                    <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" maxHeight="78vh" overflow="auto">
+                    <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%">
                         <Container layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
                             <Typography size="sm" weight="semibold">{open.name}</Typography>
                             <Typography size="xxs" color="muted">{tokensOf(open)}</Typography>
@@ -494,7 +489,7 @@ const ToolsPage = () => {
                                     <>
                                         <Section title="Apps ready to add" note="Each one is the maker's own tool server. Add it, then sign in to it.">
                                             <Container padding="none" width="220px">
-                                                <Input size="xs" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find an app" width="100%" />
+                                                <Input type="search" size="xs" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find an app" width="100%" />
                                             </Container>
                                         </Section>
                                         {shownApps.length === 0 && <Typography size="xs" color="muted">{words ? 'No listed app matches. It can still be added by its address below.' : 'Every listed app is added.'}</Typography>}

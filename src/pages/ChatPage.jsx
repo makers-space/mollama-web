@@ -1315,6 +1315,7 @@ const ChatPage = () => {
         }
     };
     const devicesAsk = useRef(0);
+    const syncedChat = useRef(null);
     const busy = Boolean(live);
 
     const openPop = (name) => {
@@ -1437,13 +1438,18 @@ const ChatPage = () => {
 
     useEffect(() => {
         if (!chat) return;
-        setDraftSetup({
-            instructions: chat.instructions || [],
+        // While the instructions menu is open on the same chat, what is being typed there is kept: only the switches follow.
+        const typing = syncedChat.current === chat.id && pop === 'setup';
+        syncedChat.current = chat.id;
+        setDraftSetup((now) => ({
+            ...(typing ? now : {
+                instructions: chat.instructions || [],
+                ...Object.fromEntries(MODEL_SETTINGS.map((setting) => [setting.key, chat.options?.[setting.key] ?? ''])),
+                num_ctx: chat.options?.num_ctx ?? ''
+            }),
             skills: chat.skills || null,
-            tools: chat.tools || [],
-            ...Object.fromEntries(MODEL_SETTINGS.map((setting) => [setting.key, chat.options?.[setting.key] ?? ''])),
-            num_ctx: chat.options?.num_ctx ?? ''
-        });
+            tools: chat.tools || []
+        }));
     }, [chat?.id, chat?.updatedAt]);
 
     const pickModel = (list, deviceId, wanted) => {
@@ -1524,7 +1530,20 @@ const ChatPage = () => {
     // With nothing chosen, a chat uses the skills that are on by default.
     const activeSkills = draftSetup.skills || skills.filter((skill) => skill.default).map((skill) => skill.id);
     const activeTools = draftSetup.tools || [];
-    const toggleTool = (id) => setDraftSetup((now) => ({ ...now, tools: activeTools.includes(id) ? activeTools.filter((other) => other !== id) : [...activeTools, id] }));
+    // Skill and tool switches take effect at once. An open chat is saved as each one is flipped, without touching the
+    // instructions being typed; a chat not started yet uses them from its first message.
+    const switchSetup = async (changes) => {
+        setDraftSetup((now) => ({ ...now, ...changes }));
+        if (!chat) return;
+        const id = chat.id;
+        try {
+            const saved = await saveChat(id, changes);
+            setChat((now) => (now && now.id === id ? { ...now, skills: saved.skills, tools: saved.tools } : now));
+        } catch (error) {
+            notifyError(describeError(error, 'This could not be saved for the chat.'));
+        }
+    };
+    const toggleTool = (id) => switchSetup({ tools: activeTools.includes(id) ? activeTools.filter((other) => other !== id) : [...activeTools, id] });
     // Only a model marked as able to use tools is offered them; one whose abilities are not known yet is given the benefit of the doubt.
     const modelAbilities = models.find((model) => model.name === currentModel)?.capabilities;
     const modelUsesTools = !modelAbilities || modelAbilities.includes('tools');
@@ -1536,10 +1555,8 @@ const ChatPage = () => {
             .filter((skill) => words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)))
             .sort((a, b) => Number(activeSkills.includes(b.id)) - Number(activeSkills.includes(a.id)));
     }, [skills, skillSearch, skillSource, activeSkills.join(',')]);
-    const toggleSkill = (id) => setDraftSetup((now) => ({
-        ...now,
-        skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id]
-    }));
+    const toggleSkill = (id) => switchSetup({ skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id] });
+    const savedNote = chat ? 'Saved to this chat as you switch.' : 'Used for this chat from your first message.';
 
     const searchOn = webSearch && (chat ? chat.webSearch !== false : draftSearch);
     const toggleSearch = async () => {
@@ -2030,7 +2047,7 @@ const ChatPage = () => {
     const chatList = (
         <>
             {(chats.length > 6 || search) && (
-                <Input placeholder="Search by title" value={search} onChange={(event) => setSearch(event.target.value)} width="100%" size="sm" />
+                <Input type="search" placeholder="Search by title" value={search} onChange={(event) => setSearch(event.target.value)} width="100%" size="sm" />
             )}
             {chats.length === 0 && <Typography size="sm" color="muted">{search ? 'No chat has that title.' : 'Your chats appear here.'}</Typography>}
             <Container layout="flex-column" gap="none" padding="none" width="100%">
@@ -2406,13 +2423,15 @@ const ChatPage = () => {
                             <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Tools</Button>
                             <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
                         </Container>
-                        {!modelUsesTools && <Typography size="xxs" color="muted">This model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
-                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                        {modelUsesTools
+                            ? <Typography size="xxs" color="muted">{savedNote}</Typography>
+                            : <Typography size="xxs" color="warning">The switches are off because this model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={!webSearch ? 'Web search is not set up on the server.' : !modelUsesTools ? 'This model cannot use tools, and web search is a tool.' : 'Gives the model two tools: search the web, and open a page.'}>
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
                                 <Typography size="xs" truncate>Web search</Typography>
-                                <Typography size="xxs" color="muted" truncate>{webSearch ? 'Search words go to the search service set on the server' : 'Not set up on the server'}</Typography>
+                                <Typography size="xxs" color="muted" truncate>{!webSearch ? 'Not set up on the server' : 'The model decides when to search. Search words go to the search service set on the server.'}</Typography>
                             </Container>
-                            <Switch size="xs" checked={searchOn} disabled={!webSearch} onChange={toggleSearch} aria-label="Web search" />
+                            <Switch size="xs" checked={searchOn && modelUsesTools} disabled={!webSearch || !modelUsesTools} onChange={toggleSearch} aria-label="Web search" />
                         </Container>
                         {tools.map((tool) => (
                         <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}>
@@ -2429,10 +2448,10 @@ const ChatPage = () => {
                     <Container layout="flex-column" gap="xs" padding="none" width="100%">
                         <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
                             <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Skills</Button>
-                            <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => setDraftSetup((now) => ({ ...now, skills: null }))}>Use defaults</Button>
+                            <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => switchSetup({ skills: null })}>Use defaults</Button>
                         </Container>
                         <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
-                            <Input size="xs" width="100%" placeholder={`Search ${skills.length} skills`} value={skillSearch} onChange={(event) => setSkillSearch(event.target.value)} aria-label="Search skills" />
+                            <Input type="search" size="xs" width="100%" placeholder={`Search ${skills.length} skills`} value={skillSearch} onChange={(event) => setSkillSearch(event.target.value)} aria-label="Search skills" />
                             <Select
                                 size="xs"
                                 width="190px"
@@ -2442,9 +2461,9 @@ const ChatPage = () => {
                                 aria-label="Show skills from"
                             />
                         </Container>
-                        <Typography size="xxs" color="muted">
-                            {`${activeSkills.length} of ${maxSkills} on. `}{activeSkills.length >= maxSkills ? 'Turn one off to add another.' : 'Each skill is extra instructions the model reads with every message, so turn on only what this chat needs.'}
-                        </Typography>
+                        {activeSkills.length >= maxSkills
+                            ? <Typography size="xxs" color="warning">{`${activeSkills.length} of ${maxSkills} skills are on, which is the most a chat holds, so the other switches are off. Turn one off to add another.`}</Typography>
+                            : <Typography size="xxs" color="muted">{`${activeSkills.length} of ${maxSkills} on. ${savedNote} A skill is instructions, not a tool: the model reads it with every message, so turn on only what this chat needs.`}</Typography>}
                         {shownSkills.length === 0 && <Typography size="xs" color="muted">No skill matches.</Typography>}
                         {shownSkills.slice(0, 40).map((skill) => (
                         <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={`${skill.description}${skill.credit ? `\n\nFrom ${skill.credit}` : ''}`}>
@@ -2452,6 +2471,7 @@ const ChatPage = () => {
                                 <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
                                     <Typography size="xs" truncate>{skill.name}</Typography>
                                     {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Written for an agent that can run commands or open files. Its guidance works here; the steps that need those do not yet.">Guidance only</Badge>}
+                                    {skill.tokens > 4000 && <Badge size="xxs" color="warning" title="A long skill. A small model may not have room for it and its conversation, and may ignore it.">Large</Badge>}
                                     <Typography size="xxs" color="muted">{`${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`}</Typography>
                                 </Container>
                                 <Typography size="xxs" color="muted" truncate>{skill.description}</Typography>
