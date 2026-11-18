@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input } from '@components/Components';
+import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Divider, Icon, Input } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
 import { toolService, deviceService, describeError } from '../client/ai.client';
 
