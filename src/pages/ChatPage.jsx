@@ -860,15 +860,42 @@ const readComponents = (source) => readMarkup(source)
     .filter((entry) => entry.node || entry.text);
 
 
+// A model sometimes writes its components without the fence that marks them, or in a fence with another name. Both are
+// still drawn. Any component that may stand on its own starts a block; the block ends where that component closes, so
+// the writing after it stays ordinary text.
+const TOP_TAGS = 'Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|FloatingActionButton|ProgressBar|CircularProgress|Typography|Badge|Image|Video|Audio|PdfViewer|Editor|Input|Select|Switch';
+const BARE_START = new RegExp(`^[ \\t]*<(${TOP_TAGS})[\\s>/]`, 'm');
+const TAG_START = new RegExp(`^\\s*<(${TOP_TAGS})[\\s>/]`);
+const endOfTag = (text, from) => {
+    const name = text.slice(from).match(/^\s*<([A-Za-z0-9]+)/)[1];
+    const tags = new RegExp(`<(/?)${name}\\b[^>]*?(/?)>`, 'g');
+    tags.lastIndex = from;
+    let depth = 0;
+    for (let tag = tags.exec(text); tag; tag = tags.exec(text)) {
+        if (!tag[2]) depth += tag[1] ? -1 : 1;
+        if (depth <= 0) return tags.lastIndex;
+    }
+    return -1;
+};
 const fenceBareBlocks = (text) => {
-    const start = /^[ \t]*<(Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|ProgressBar|Typography|Badge|Image|Editor)[\s>]/m;
-    if (!start.test(text)) return text;
+    if (!BARE_START.test(text)) return text;
     return String(text).split(/(```[\s\S]*?(?:```|$))/).map((part, position) => {
         if (position % 2 === 1) return part;
-        const at = part.search(start);
-        if (at === -1) return part;
-        const last = part.lastIndexOf('>');
-        return `${part.slice(0, at)}\n\n\`\`\`component\n${part.slice(at, last + 1).trim()}\n\`\`\`\n\n${part.slice(last + 1)}`;
+        let out = '';
+        let rest = part;
+        for (let at = rest.search(BARE_START); at !== -1; at = rest.search(BARE_START)) {
+            let end = at;
+            // Components written one after another belong to one block.
+            while (end !== -1) {
+                end = endOfTag(rest, end);
+                if (end === -1 || !TAG_START.test(rest.slice(end))) break;
+            }
+            // Not closed, because it is still being written or never was: everything from here on is the component.
+            if (end === -1) end = rest.length;
+            out += `${rest.slice(0, at)}\n\n\`\`\`component\n${rest.slice(at, end).trim()}\n\`\`\`\n\n`;
+            rest = rest.slice(end);
+        }
+        return out + rest;
     }).join('');
 };
 
@@ -910,8 +937,11 @@ const ComponentBlock = ({ source }) => {
 
 const PreBlock = ({ children }) => {
     const language = String(children?.props?.className || '');
-    if (!/language-component\b/.test(language)) return <CodeBlock>{children}</CodeBlock>;
-    return <ComponentBlock source={textOf(children).replace(/`+\s*$/, '')} />;
+    const code = textOf(children);
+    // Components in a fence with another name, such as xml, are drawn all the same, unless it is program code.
+    const meant = /language-component\b/.test(language) || (TAG_START.test(code) && !/=>|className=|onClick=|\bimport\s/.test(code));
+    if (!meant) return <CodeBlock>{children}</CodeBlock>;
+    return <ComponentBlock source={code.replace(/`+\s*$/, '')} />;
 };
 
 const heading = (as, size) => ({ children }) => <Typography as={as} size={size} weight="bold" marginBottom="sm">{children}</Typography>;
