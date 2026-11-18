@@ -77,6 +77,52 @@ export const DesktopDownloads = ({ vertical = false }) => {
     );
 };
 
+const isNewer = (candidate, current) => {
+    const parts = (version) => String(version || '').split('.').map((part) => Number(part) || 0);
+    const [next, now] = [parts(candidate), parts(current)];
+    for (let index = 0; index < 3; index += 1) {
+        if ((next[index] || 0) !== (now[index] || 0)) return (next[index] || 0) > (now[index] || 0);
+    }
+    return false;
+};
+const thisSystem = () => {
+    const agent = navigator.userAgent;
+    const id = /Windows/i.test(agent) ? 'windows' : /Macintosh/i.test(agent) ? 'mac' : /Linux/i.test(agent) ? 'linux' : null;
+    return desktopService.systems.find((system) => system.id === id) || null;
+};
+
+// Inside the desktop app, the card for this computer says which version of the app it runs and offers a newer one.
+// The installer downloads in the browser and updates the app in place when it is run; sign-in and settings are kept.
+const AppUpdate = () => {
+    const current = window.desktop?.version || null;
+    const [published, setPublished] = useState(null);
+    const [checking, setChecking] = useState(false);
+    const check = useCallback(() => {
+        setChecking(true);
+        desktopService.published().then(setPublished).finally(() => setChecking(false));
+    }, []);
+    useEffect(() => { if (current) check(); }, [current, check]);
+    if (!current) return null;
+
+    const system = thisSystem();
+    const file = system ? `${desktopService.channels()[0].name}${system.ending}` : null;
+    const ready = Boolean(published?.version && file && published.files.includes(file) && isNewer(published.version, current));
+    return (
+        <>
+            <Badge size="xs" color={ready ? 'warning' : 'default'} title={ready ? `Version ${published.version} is available` : undefined}>App {current}</Badge>
+            {ready ? (
+                <Button size="xs" color="primary" title="Downloads the installer in your browser. Run it to update; your sign-in and settings stay." onClick={() => window.open(desktopService.address(file), '_blank', 'noopener')}>
+                    <Icon name="FiDownload" size="xs" />Update to {published.version}
+                </Button>
+            ) : (
+                <Button size="xs" color="secondary" disabled={checking} title={published && !published.version ? 'The list of versions could not be read just now.' : published ? 'This is the newest version.' : undefined} onClick={check}>
+                    <Icon name={checking ? 'FiLoader' : 'FiRefreshCw'} size="xs" />{checking ? 'Checking…' : published && !published.version ? 'Could not check' : published ? 'Up to date' : 'Check for updates'}
+                </Button>
+            )}
+        </>
+    );
+};
+
 const toMb = (gbText) => (gbText === '' ? null : Math.round(Number(gbText) * 1024));
 
 const DeviceCard = ({ device, canManage, onChanged, onRemove, onPause, here, onSetUp }) => {
@@ -147,6 +193,7 @@ const DeviceCard = ({ device, canManage, onChanged, onRemove, onPause, here, onS
                             {ollama.available ? `Ollama ${ollama.version}` : 'Ollama is not running'}
                         </Badge>
                     )}
+                    {here && <AppUpdate />}
                     {here && device.online && !device.paused && !ollama.available && <Button size="xs" color="secondary" onClick={onSetUp}>Set up Ollama</Button>}
                     {device.kind !== 'local' && (device.online || device.paused) && (
                         <Button size="xs" color="secondary" onClick={() => onPause(device)}>
