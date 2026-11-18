@@ -1242,14 +1242,14 @@ const ChatPage = () => {
     pickerMemory.as(signedIn?.id || signedIn?._id);
     // The pickers open with what they showed last, so a name is there at once; the fresh answer then corrects it.
     const preferDevice = (list, current) => {
-        const ready = list.filter((device) => deviceService.ready(device) || (device.online && !device.paused && device.ollama?.available));
-        const usable = list.filter((device) => device.online && !device.paused);
-        return (ready.find((device) => device.id === deviceService.chosen())
-            || ready.find((device) => device.id === current)
-            || ready[0]
-            || usable.find((device) => device.id === deviceService.chosen())
-            || usable.find((device) => device.id === current)
-            || usable[0])?.id || null;
+        const computers = list.filter((device) => device.kind !== 'cloud');
+        const usable = computers.filter((device) => device.online && !device.paused);
+        return (list.find((device) => device.id === deviceService.chosen())
+            || list.find((device) => device.id === current)
+            || usable.find((device) => deviceService.ready(device))
+            || usable[0]
+            || list.find((device) => device.kind === 'cloud' && device.ollama?.available)
+            || list[0])?.id || null;
     };
     const [devices, setDevices] = useState(() => pickerMemory.devices().devices);
     const [draftDevice, setDraftDevice] = useState(() => {
@@ -1301,6 +1301,16 @@ const ChatPage = () => {
     const syncRef = useRef(null);
     chatRef.current = chat;
     const fileInputRef = useRef(null);
+    const editsRef = useRef(0);
+    const saveChat = async (id, changes) => {
+        editsRef.current += 1;
+        try {
+            return (await chatService.update(id, changes)).chat;
+        } finally {
+            editsRef.current -= 1;
+        }
+    };
+    const devicesAsk = useRef(0);
     const busy = Boolean(live);
 
     const openPop = (name) => {
@@ -1331,8 +1341,10 @@ const ChatPage = () => {
     const modelsLoaded = modelState.device === currentDevice ? modelState.loaded : Boolean(pickerMemory.models(currentDevice));
 
     const loadDevices = useCallback(() => {
+        const ask = ++devicesAsk.current;
         deviceService.listPickable()
             .then((result) => {
+                if (ask !== devicesAsk.current) return;
                 setDevices(result.devices);
                 pickerMemory.keepDevices(result.devices, result.current);
                 // The person's pick stays, even while that computer is offline for a moment; one is chosen only when there is
@@ -1365,8 +1377,9 @@ const ChatPage = () => {
         setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: Boolean(kept) });
         try {
             const result = await modelService.installedOn(currentDevice);
-            // Ollama on that computer did not answer: what was last seen there stays, and the picker says so.
-            if (result.ollamaAvailable === false) throw new Error('unreachable');
+            // Ollama on that computer did not answer, or another computer answered in its place: what was last seen there
+            // stays, and the picker says so.
+            if (result.ollamaAvailable === false || (currentDevice && result.device && result.device !== currentDevice)) throw new Error('unreachable');
             pickerMemory.keepModels(currentDevice, result.models);
             if (ask !== modelsAsk.current) return;
             setModelState({ device: currentDevice, fresh: true, list: result.models.filter((model) => model.canChat !== false), loaded: true, others: result.models.filter((model) => model.canChat === false).map((model) => model.displayName || model.name), failed: false });
@@ -1399,16 +1412,23 @@ const ChatPage = () => {
             setDraftSetup(emptySetup);
             return;
         }
-        if (chat?.id === routeId) return;
+        if (chat?.id === routeId) return undefined;
+        // Only the chat still asked for is opened, so a slow answer for one clicked earlier is dropped.
+        let wanted = true;
         chatService.get(routeId)
             .then((result) => {
+                if (!wanted) return;
                 setChat(result.chat);
                 if (result.chat.replying) joinReply(result.chat);
             })
             .catch((error) => {
+                if (!wanted) return;
                 notifyError(describeError(error, 'This chat could not be opened.'));
                 navigate('/chat', { replace: true });
             });
+        return () => {
+            wanted = false;
+        };
     }, [routeId]);
 
     useEffect(() => {
@@ -1427,30 +1447,29 @@ const ChatPage = () => {
         if (has(wanted)) return wanted;
         const remembered = pickerMemory.choice(deviceId);
         if (has(remembered)) return remembered;
-        return (list.find((model) => model.ready) || list[0])?.name || null;
+        return list[0]?.name || null;
     };
     const currentModel = models.length > 0 ? pickModel(models, currentDevice, chat?.model || draftModel) : chat?.model || draftModel;
 
     // An open chat whose model is not on its computer is moved to the model shown, once that computer's own list has arrived.
     useEffect(() => {
-        if (!chat || !modelState.fresh || modelState.device !== currentDevice || !currentModel || chat.model === currentModel) return;
-        chatService.update(chat.id, { model: currentModel }).then((result) => setChat(result.chat)).catch(() => {});
+        if (!chat?.device || !modelState.fresh || modelState.device !== chat.device || !currentModel || chat.model === currentModel) return;
+        const id = chat.id;
+        saveChat(id, { model: currentModel }).then((saved) => setChat((now) => (now && now.id === id ? saved : now))).catch(() => {});
     }, [chat?.id, chat?.model, modelState, currentDevice, currentModel]);
 
     const changeDevice = async (id) => {
         if (id === currentDevice) return;
         pickerMemory.keepChoice(currentDevice, currentModel);
         deviceService.choose(id);
-        if (!chat) {
-            setDraftDevice(id);
-            return;
-        }
+        setDraftDevice(id);
+        if (!chat) return;
         // The computer and its model change together, in one step.
         const model = pickModel(keptModels(id), id, chat.model) || chat.model;
         const before = { device: chat.device, model: chat.model };
         setChat((now) => now && { ...now, device: id, model });
         try {
-            const saved = (await chatService.update(chat.id, { device: id, model })).chat;
+            const saved = await saveChat(chat.id, { device: id, model });
             setChat((now) => (now && now.id === saved.id && now.device === id ? saved : now));
         } catch (error) {
             setChat((now) => (now && now.device === id ? { ...now, ...before } : now));
@@ -1525,7 +1544,7 @@ const ChatPage = () => {
         if (chat) return chat;
         const body = setupBody();
         if (currentModel) body.model = currentModel;
-        if (draftDevice) body.device = draftDevice;
+        if (currentDevice) body.device = currentDevice;
         body.webSearch = draftSearch;
         const created = (await chatService.create(body)).chat;
         setChat(created);
@@ -1644,10 +1663,10 @@ const ChatPage = () => {
             navigate('/chat', { replace: true });
             return;
         }
-        if (live) return;
+        if (live || editsRef.current > 0) return;
         try {
             const next = (await chatService.get(open.id)).chat;
-            if (chatRef.current?.id !== next.id) return;
+            if (chatRef.current?.id !== next.id || editsRef.current > 0) return;
             setChat(next);
             if (next.replying) joinReply(next);
         } catch {
@@ -1888,7 +1907,7 @@ const ChatPage = () => {
         const before = chat.model;
         setChat((now) => now && { ...now, model: name });
         try {
-            const saved = (await chatService.update(chat.id, { model: name })).chat;
+            const saved = await saveChat(chat.id, { model: name });
             setChat((now) => (now && now.id === saved.id && now.model === name ? saved : now));
         } catch (error) {
             setChat((now) => (now && now.model === name ? { ...now, model: before } : now));
@@ -2298,7 +2317,7 @@ const ChatPage = () => {
                                 )}
                             </Container>
                             <Pop
-                                label={devices.length > 1 ? `${devices.find((device) => device.id === currentDevice)?.name || 'Computer'} · ${modelLabel}` : modelLabel}
+                                label={devices.length > 1 ? `${devices.find((device) => device.id === currentDevice)?.name || 'Pick a computer'} · ${modelLabel}` : modelLabel}
                                 icon={devices.length > 1 ? (devices.find((device) => device.id === currentDevice)?.kind === 'cloud' ? 'FiCloud' : 'FiMonitor') : null}
                                 endIcon="FiCpu"
                                 size="xs"
@@ -2326,7 +2345,11 @@ const ChatPage = () => {
                                         {models.length === 0 && (
                                             <Typography size="xs" color="muted">
                                                 {!modelsLoaded ? 'Loading the models on this computer…'
-                                                    : modelState.device === currentDevice && modelState.failed ? 'Ollama on this computer did not answer just now. Trying again…'
+                                                    : modelState.device === currentDevice && modelState.failed ? (
+                                                        !devices.some((device) => device.id === currentDevice) ? 'This computer is no longer on your account. Pick another.'
+                                                        : devices.find((device) => device.id === currentDevice)?.kind === 'cloud' ? 'This online service needs attention. Open Online on the Models page.'
+                                                        : !devices.find((device) => device.id === currentDevice)?.online ? 'This computer is offline. Open the Mollama app on it.'
+                                                        : 'Ollama on this computer did not answer just now. Trying again…')
                                                     : modelState.device === currentDevice && modelState.others?.length ? `The models here cannot chat: ${modelState.others.join(', ')}. Download a chat model on the Models page.`
                                                     : 'No model is installed yet.'}
                                             </Typography>

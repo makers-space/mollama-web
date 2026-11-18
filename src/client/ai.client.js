@@ -283,6 +283,7 @@ export const pickerMemory = {
     },
     keepModels(deviceId, models) {
         if (!pickerOwner) return;
+        keptModels = new Map(Object.entries(readKept('mollama-picker-models', {})));
         keptModels.set(String(deviceId || 'default'), models.map(({ name, displayName, fit, ready, canChat }) => ({ name, displayName, fit, ready, canChat })));
         keep('mollama-picker-models', Object.fromEntries(keptModels));
     }
@@ -347,8 +348,8 @@ export const useDeviceLink = () => {
                     await logout();
                     return;
                 }
-                const hardware = await desktop.hardware();
-                const linked = await api.post('/devices/link', { hostname: hardware.hostname, hardware });
+                const { computerName, ...hardware } = await desktop.hardware();
+                const linked = await api.post('/devices/link', { hostname: hardware.hostname, ...(computerName ? { name: String(computerName).slice(0, 80) } : {}), hardware });
                 if (cancelled) return;
                 const socketUrl = `${import.meta.env.VITE_WS_BASE_URL || API_BASE_URL.replace(/^http/, 'ws').replace(/[/]api[/]v1[/]?$/, '')}/devices`;
                 await desktop.link({ deviceId: linked.device.id, key: linked.key, user: String(userId), socketUrl });
