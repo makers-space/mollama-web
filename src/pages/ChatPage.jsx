@@ -1546,7 +1546,7 @@ const ChatPage = () => {
     const toggleTool = (id) => switchSetup({ tools: activeTools.includes(id) ? activeTools.filter((other) => other !== id) : [...activeTools, id] });
     // Only a model marked as able to use tools is offered them; one whose abilities are not known yet is given the benefit of the doubt.
     const modelAbilities = models.find((model) => model.name === currentModel)?.capabilities;
-    const modelUsesTools = !modelAbilities || modelAbilities.includes('tools');
+    const modelUsesTools = !modelAbilities?.length || modelAbilities.includes('tools');
     // The skills shown: the ones turned on first, then the rest, narrowed by the search words and the project picked.
     const shownSkills = useMemo(() => {
         const words = skillSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -2389,6 +2389,7 @@ const ChatPage = () => {
                                         )}
                                         {models.map((model) => (
                                             <Row key={model.name} label={model.displayName} size="xs" selected={model.name === currentModel} onClick={() => changeModel(model.name)}>
+                                                {model.capabilities?.length > 0 && !model.capabilities.includes('tools') && <Badge size="xxs" color="warning" title="This model cannot use tools or search the web. It answers only from what it already knows.">No tools</Badge>}
                                                 <Badge size="xxs" color={FIT_COLORS[model.fit?.verdict] || 'tertiary'}>{model.fit?.label || 'Fit unknown'}</Badge>
                                                 {model.ready && <Icon name="FiCheckCircle" size="xs" color="success" title="Loaded and ready to use right now" aria-label="Loaded and ready to use right now" />}
                                             </Row>
@@ -2492,7 +2493,9 @@ const ChatPage = () => {
                             <Container layout="flex-column" gap="none" padding="none" width="100%">
                                 {(tools.length > 0 || webSearch) && (
                                     <Row icon="FiTool" label="Tools" title="Choose the tools models may use in this chat" onClick={() => setView('tools')}>
-                                        <Typography size="xxs" color="muted">{`${activeTools.length + (searchOn ? 1 : 0)} on`}</Typography>
+                                        {modelUsesTools
+                                            ? <Typography size="xxs" color="muted">{`${activeTools.length + (searchOn ? 1 : 0)} on`}</Typography>
+                                            : <Badge size="xxs" color="warning" title="The chosen model cannot use tools or search the web. Pick a model without the No tools mark.">Not with this model</Badge>}
                                         <Icon name="FiChevronRight" size="xs" />
                                     </Row>
                                 )}

@@ -292,7 +292,7 @@ export const pickerMemory = {
     keepModels(deviceId, models) {
         if (!pickerOwner) return;
         keptModels = new Map(Object.entries(readKept('mollama-picker-models', {})));
-        keptModels.set(String(deviceId || 'default'), models.map(({ name, displayName, fit, ready, canChat }) => ({ name, displayName, fit, ready, canChat })));
+        keptModels.set(String(deviceId || 'default'), models.map(({ name, displayName, fit, ready, canChat, capabilities }) => ({ name, displayName, fit, ready, canChat, capabilities })));
         keep('mollama-picker-models', Object.fromEntries(keptModels));
     }
 };
