@@ -14,7 +14,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { chatService, deviceService, fileService, modelService, promptService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
 import { appService } from '../client/app.client';
 
-const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error' };
+const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'primary' };
 const FIRST_MESSAGE = 'Explain what you can help me with in three sentences.';
 const MAX_ARTICLES = 10;
 const READABLE = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|pdf|docx|xml|ya?ml|html?|js|jsx|ts|tsx|py|sql|css)$/i;
@@ -1309,7 +1309,7 @@ const ChatPage = () => {
     const modelsLoaded = modelState.device === currentDevice ? modelState.loaded : Boolean(pickerMemory.models(currentDevice));
 
     const loadDevices = useCallback(() => {
-        deviceService.listDevices()
+        deviceService.listPickable()
             .then((result) => {
                 setDevices(result.devices);
                 pickerMemory.keepDevices(result.devices, result.current);
@@ -2285,7 +2285,9 @@ const ChatPage = () => {
                     </Card>
                     <Container layout="flex" justify="center" padding="none" width="100%">
                         <Typography size="xxs" color="muted">
-                            {searchOn
+                            {devices.find((device) => device.id === currentDevice)?.kind === 'cloud'
+                                ? 'Replies are written by a model that runs online. What you type and attach in this chat is sent to that service, under your own account with it, and it is billed by them. Dictation is done by your browser, which may send your voice to its maker.'
+                                : searchOn
                                 ? 'Replies are written by a model running on this device. When the model searches the web, its search words go to the search service set on the server and the pages it opens are loaded by this server. Dictation is done by your browser, which may send your voice to its maker.'
                                 : `Replies are written by a model running on this device. Nothing you type or attach is sent to an outside AI service. ${webSearch ? 'Web search is off for this chat, so the model cannot look things up.' : 'Web search is off, so models cannot look things up; it is turned on by setting a search key on the server.'} Dictation is done by your browser, which may send your voice to its maker.`}
                         </Typography>

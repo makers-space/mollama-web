@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input, Select, ProgressBar } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { deviceService, modelService, describeError, useGuide } from '../client/ai.client';
+import { deviceService, modelService, providerService, describeError, useGuide } from '../client/ai.client';
 
 const TABS = [
     { id: 'discover', label: 'Discover' },
     { id: 'installed', label: 'Installed' },
     { id: 'running', label: 'Running' },
-    { id: 'mine', label: 'My models' }
+    { id: 'mine', label: 'My models' },
+    { id: 'online', label: 'Online' }
 ];
+const PROVIDER_ICONS = { ollama: 'SiOllama', anthropic: 'SiAnthropic', openai: 'FiZap', google: 'SiGooglegemini', moonshot: 'FiMoon', deepseek: 'SiDeepseek', xai: 'SiX', mistral: 'SiMistralai', openrouter: 'SiOpenrouter', groq: 'FiCpu', cerebras: 'FiCpu' };
+const PROVIDER_COLORS = { healthy: 'success', unchecked: 'default', busy: 'warning', empty: 'warning' };
 
 const PURPOSES = [
     { id: 'all', label: 'All' },
@@ -179,12 +182,155 @@ const DownloadsPanel = ({ jobs, canManage, onResume, onPause, onCancel }) => {
     );
 };
 
+// Models that run on another company's computers with the person's own key. Ollama comes first, because it runs the
+// models from the same library that are too large to download; the other services follow.
+export const OnlineTab = () => {
+    const { success, error: notifyError, confirm } = useNotification();
+    const [providers, setProviders] = useState(null);
+    const [suggested, setSuggested] = useState([]);
+    const [chosen, setChosen] = useState(null);
+    const [key, setKey] = useState('');
+    const [busy, setBusy] = useState(null);
+
+    useEffect(() => {
+        providerService.list()
+            .then((listed) => { setProviders(listed.providers); setSuggested(listed.suggested); })
+            .catch((error) => { setProviders([]); notifyError(describeError(error, 'Your online services could not be loaded.')); });
+    }, []);
+
+    const replace = (provider) => setProviders((current) => current.map((one) => (one.id === provider.id ? provider : one)));
+    const connected = (id) => (providers || []).find((provider) => provider.kind === id) || null;
+    const run = async (id, work, fallback) => {
+        setBusy(id);
+        try {
+            await work();
+        } catch (error) {
+            notifyError(describeError(error, fallback));
+        }
+        setBusy(null);
+    };
+    const save = () => run(chosen.id, async () => {
+        const existing = connected(chosen.id);
+        const { provider } = existing ? await providerService.replaceKey(existing.id, key.trim()) : await providerService.add(chosen.id, key.trim());
+        if (existing) replace(provider);
+        else setProviders((current) => [...current, provider]);
+        if (provider.health.state === 'healthy') success(`${provider.name} is connected. Its models are in the model picker of every chat.`);
+        setKey('');
+        if (provider.health.state === 'healthy') setChosen(null);
+    }, 'The key could not be saved.');
+    const check = (provider) => run(provider.id, async () => replace((await providerService.check(provider.id)).provider), 'This service could not be checked.');
+    const remove = async (provider) => {
+        if (!await confirm(`Remove ${provider.name}? Its models leave the model picker, and its key is deleted from Mollama.`, { confirmLabel: 'Remove', color: 'error' })) return;
+        run(provider.id, async () => {
+            await providerService.remove(provider.id);
+            setProviders((current) => current.filter((one) => one.id !== provider.id));
+        }, 'This service could not be removed.');
+    };
+
+    if (providers === null) return <Typography size="xs" color="muted">Loading your online services…</Typography>;
+    const ollama = suggested.find((entry) => entry.id === 'ollama');
+    const others = suggested.filter((entry) => entry.id !== 'ollama' && !connected(entry.id));
+
+    const keyForm = (entry) => (
+        <Card layout="flex-column" gap="xs" padding="md" width="100%" hover={false}>
+            <Container layout="flex" align="center" gap="sm" padding="none">
+                <Icon name={PROVIDER_ICONS[entry.id] || 'FiCloud'} size="sm" color="primary" />
+                <Typography size="sm" weight="semibold">Getting a key for {entry.name}</Typography>
+                <Typography size="xxs" color="muted">{entry.key.cost}</Typography>
+                <Button size="xxs" color="secondary" title="Opens in a new tab" onClick={() => window.open(entry.key.page, '_blank', 'noopener')}>
+                    <Icon name="FiExternalLink" size="xs" />Open the key page
+                </Button>
+            </Container>
+            {entry.key.steps.map((step, index) => <Typography key={step} size="xs">{index + 1}. {step}</Typography>)}
+            <Container layout="flex" align="end" gap="sm" padding="none" width="100%" wrap={false}>
+                <Input size="sm" label="Key" type="password" value={key} onChange={(e) => setKey(e.target.value)} width="100%" />
+                <Button size="sm" color="primary" disabled={busy === entry.id || key.trim().length < 8} onClick={save}>
+                    <Icon name="FiCheck" size="xs" />{busy === entry.id ? 'Checking…' : 'Connect'}
+                </Button>
+                <Button size="sm" color="secondary" onClick={() => { setChosen(null); setKey(''); }}>Cancel</Button>
+            </Container>
+            <Typography size="xxs" color="muted">The key is stored sealed on Mollama&apos;s server and is never shown again. Chats on these models are sent to {entry.name} and billed to your account there.</Typography>
+        </Card>
+    );
+
+    const connectedCard = (provider) => (
+        <Card key={provider.id} layout="flex-column" gap="xs" padding="sm" width="100%" minWidth="0" hover={false}>
+            <Row>
+                <Container layout="flex" align="center" gap="xs" padding="none" wrap={false} minWidth="0">
+                    <Icon name={PROVIDER_ICONS[provider.kind] || 'FiCloud'} size="sm" color="primary" />
+                    <Typography size="sm" weight="semibold" truncate>{provider.name}</Typography>
+                </Container>
+                <Badge size="xs" color={PROVIDER_COLORS[provider.health.state] || 'error'}>{provider.health.label}</Badge>
+            </Row>
+            <Typography size="xxs" color="muted">{provider.modelCount === 1 ? '1 model' : `${provider.modelCount} models`} in the model picker of every chat</Typography>
+            {provider.health.needs.map((need) => <Typography key={need} size="xxs">{need}</Typography>)}
+            <Container layout="flex" align="center" justify="end" gap="xs" padding="none" width="100%">
+                <Button size="xxs" color="secondary" disabled={busy === provider.id} onClick={() => { setChosen(suggested.find((entry) => entry.id === provider.kind)); setKey(''); }}><Icon name="FiKey" size="xs" />Replace key</Button>
+                <Button size="xxs" color="secondary" disabled={busy === provider.id} onClick={() => check(provider)}><Icon name="FiRefreshCw" size="xs" />{busy === provider.id ? 'Checking…' : 'Check'}</Button>
+                <Button size="xxs" color="error" disabled={busy === provider.id} onClick={() => remove(provider)}><Icon name="FiTrash2" size="xs" />Remove</Button>
+            </Container>
+        </Card>
+    );
+
+    return (
+        <Container layout="flex-column" gap="md" padding="none" width="100%">
+            {providers.length > 0 && (
+                <>
+                    <SectionTitle icon="FiCloud" title="Connected" count={providers.length} />
+                    <Container layout="grid" columns={3} gap="sm" padding="none" width="100%">
+                        {providers.map(connectedCard)}
+                    </Container>
+                </>
+            )}
+
+            {ollama && !connected('ollama') && (
+                <>
+                    <SectionTitle icon="FiDownloadCloud" title="Models too large to download" />
+                    <Card layout="flex" align="center" justify="between" gap="md" padding="md" width="100%" hover={false} wrap={false}>
+                        <Container layout="flex" align="center" gap="sm" padding="none" wrap={false} minWidth="0">
+                            <Icon name="SiOllama" size="md" color="primary" />
+                            <Container layout="flex-column" gap="none" padding="none" minWidth="0">
+                                <Typography size="sm" weight="semibold">Run them on Ollama&apos;s computers</Typography>
+                                <Typography size="xs" color="muted">The models marked &quot;Cloud only&quot; in Discover cannot be downloaded. With your own Ollama key they run on Ollama&apos;s computers and work in chats like any other model.</Typography>
+                            </Container>
+                        </Container>
+                        <Button size="sm" color="primary" onClick={() => { setChosen(ollama); setKey(''); }}><Icon name="FiKey" size="xs" />Add an Ollama key</Button>
+                    </Card>
+                </>
+            )}
+
+            {chosen && keyForm(chosen)}
+
+            {others.length > 0 && (
+                <>
+                    <SectionTitle icon="FiGlobe" title="Other providers" />
+                    <Container layout="grid" columns={4} gap="sm" padding="none" width="100%">
+                        {others.map((entry) => (
+                            <Card key={entry.id} layout="flex-column" gap="xs" padding="md" width="100%" minWidth="0" hover={false} shadow={false}>
+                                <Row>
+                                    <Container layout="flex" align="center" gap="sm" padding="none" wrap={false} minWidth="0">
+                                        <Icon name={PROVIDER_ICONS[entry.id] || 'FiCloud'} size="md" color="primary" />
+                                        <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
+                                    </Container>
+                                    <Button size="xs" color={chosen?.id === entry.id ? 'secondary' : 'primary'} onClick={() => { setChosen(entry); setKey(''); }}><Icon name="FiKey" size="xs" />Add a key</Button>
+                                </Row>
+                                <Typography size="xs">{entry.does}.</Typography>
+                                <Typography size="xxs" color="muted">{entry.key.cost}</Typography>
+                            </Card>
+                        ))}
+                    </Container>
+                </>
+            )}
+        </Container>
+    );
+};
+
 const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     const guide = useGuide();
     const busy = job && ['queued', 'downloading'].includes(job.status);
     let action = null;
 
-    if (model.cloudOnly) action = null;
+    if (model.cloudOnly) action = <Button size="xs" color="secondary" onClick={() => window.dispatchEvent(new CustomEvent('models-open-online'))}><Icon name="FiCloud" size="xs" />Use online</Button>;
     else if (model.installed) action = <Badge size="xs" color="success">Installed</Badge>;
     else if (busy) action = <Badge size="xs" color="primary">{job.status === 'queued' ? 'Waiting' : `Downloading ${job.percent}%`}</Badge>;
     else if (!model.fit.fits) action = <Badge size="xs" color="error">Too large</Badge>;
@@ -215,7 +361,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
                 <Container padding="none" flexFill minWidth="0">
                     <Typography size="xxs" color="muted" truncate={!model.cloudOnly}>
                         {model.cloudOnly
-                            ? 'Cloud models are a paid subscription service.'
+                            ? 'Too large to download. Runs on Ollama with your own key.'
                             : [`${gb(model.sizeMb)}`, model.fit.tokensPerSecond ? speedWords(model.fit.tokensPerSecond) : null].filter(Boolean).join(' · ')}
                     </Typography>
                 </Container>
@@ -707,6 +853,11 @@ const ModelsPage = () => {
     const [refreshing, setRefreshing] = useState(false);
 
     const [catalogueLoading, setCatalogueLoading] = useState(false);
+    useEffect(() => {
+        const open = () => setTab('online');
+        window.addEventListener('models-open-online', open);
+        return () => window.removeEventListener('models-open-online', open);
+    }, []);
     // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
     const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, all = false } = {}) => {
         setCatalogueLoading(true);
@@ -973,13 +1124,14 @@ const ModelsPage = () => {
             </Container>
             <Container layout="flex" justify="center" padding="none" width="100%" flexFill minHeight="0" overflow="auto">
             <Container layout="flex-column" gap="md" padding="lg" width="100%" maxWidth="1360px" wrap={false}>
-                {devices?.length === 0 && (
+                {tab === 'online' && <OnlineTab />}
+                {tab !== 'online' && devices?.length === 0 && (
                     <Empty icon="FiMonitor" title="No device is connected to your account" text="Open the Devices page to add a computer. Its models are then managed here." />
                 )}
-                {device && !device.online && (
+                {tab !== 'online' && device && !device.online && (
                     <Empty icon="FiMonitor" title={`${device.name} is offline`} text="Open the Mollama desktop app on that computer to see and manage its models." />
                 )}
-                {device?.online && device.paused && (
+                {tab !== 'online' && device?.online && device.paused && (
                     <Empty icon="FiPause" title={`${device.name} is paused`} text="Resume it on the Devices page to see and manage its models." />
                 )}
                 {device?.online && tab === 'discover' && (

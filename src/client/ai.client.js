@@ -181,6 +181,14 @@ let chatDevice = null;
 const onDevice = (id) => (id ? { headers: { 'X-Mollama-Device': id } } : {});
 const onViewed = () => onDevice(viewedDevice);
 
+export const providerService = {
+    list: () => api.get('/providers'),
+    add: (kind, key) => api.post('/providers', { kind, key }),
+    check: (id) => api.post(`/providers/${id}/check`, {}),
+    replaceKey: (id, key) => api.patch(`/providers/${id}`, { key }),
+    remove: (id) => api.delete(`/providers/${id}`)
+};
+
 export const toolService = {
     list: () => api.get('/tools/servers'),
     catalogue: () => api.get('/tools/catalogue'),
@@ -193,6 +201,8 @@ export const toolService = {
 
 export const deviceService = {
     listDevices: () => api.get('/devices'),
+    // The computers plus the online services a person has connected, for choosing where a chat's model runs.
+    listPickable: () => api.get('/devices?with=online'),
     linkDevice: (details) => api.post('/devices/link', details),
     removeDevice: (id) => api.delete(`/devices/${id}`),
     pauseDevice: (id) => api.post(`/devices/${id}/pause`, {}),
