@@ -5,7 +5,6 @@ import { useNotification } from '@contexts/NotificationContext';
 import { toolService, deviceService, describeError } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
-const SIGN_IN_LABELS = { account: 'Sign in with your account', key: 'Needs a key', none: 'No sign-in' };
 // Each listed app's own logo, where the icon sets have one. The few without one get a plain icon for what they do.
 const APP_ICONS = {
     Notion: 'SiNotion', Atlassian: 'SiAtlassian', Airtable: 'SiAirtable', Coda: 'SiCoda', Linear: 'SiLinear', ClickUp: 'SiClickup', Trello: 'SiTrello', Todoist: 'SiTodoist',
@@ -14,7 +13,7 @@ const APP_ICONS = {
     Calendly: 'SiCalendly', Stripe: 'SiStripe', 'Hugging Face': 'SiHuggingface', Zapier: 'SiZapier', Make: 'SiMake',
     DeepWiki: 'FiBookOpen', Exa: 'FiSearch', Firecrawl: 'FiSearch', Tavily: 'FiSearch'
 };
-const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', offline: 'default' };
+const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', busy: 'warning', offline: 'default' };
 
 // A sign-in page opens in a tab of its own. The tab is opened at the click, before anything is asked of the server,
 // because browsers block a tab opened later. Inside the desktop app the link is handed to the person's browser instead.
@@ -210,7 +209,7 @@ const ToolsPage = () => {
 
     // One step for a listed app: add it, then go straight to its sign-in page when it asks for an account.
     const addApp = async (entry) => {
-        if (entry.signIn === 'key') {
+        if (entry.keyNeeded) {
             setKeyHelp(entry);
             return setRemote({ name: entry.name, address: entry.address, key: '' });
         }
@@ -313,11 +312,10 @@ const ToolsPage = () => {
                                                             <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
                                                         </Container>
                                                         <Button size="xs" color="primary" disabled={adding === entry.address} onClick={() => addApp(entry)}>
-                                                            <Icon name={entry.signIn === 'key' ? 'FiKey' : 'FiPlus'} size="xs" />{adding === entry.address ? 'Adding…' : entry.signIn === 'key' ? 'Add with a key' : 'Add'}
+                                                            <Icon name={entry.keyNeeded ? 'FiKey' : 'FiPlus'} size="xs" />{adding === entry.address ? 'Adding…' : entry.keyNeeded ? 'Add with a key' : 'Add'}
                                                         </Button>
                                                     </Container>
                                                     <Typography size="xs">{entry.does}.</Typography>
-                                                    <Typography size="xxs" color="muted">{SIGN_IN_LABELS[entry.signIn]}</Typography>
                                                 </Card>
                                             ))}
                                         </Container>
