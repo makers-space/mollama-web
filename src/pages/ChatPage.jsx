@@ -1565,6 +1565,8 @@ const ChatPage = () => {
     // With nothing chosen, a chat uses the skills that are on by default.
     const activeSkills = draftSetup.skills || skills.filter((skill) => skill.default).map((skill) => skill.id);
     const activeTools = draftSetup.tools || [];
+    // The built-in tools are always on, so a chat chooses only among the connected ones.
+    const connectedTools = tools.filter((tool) => tool.kind !== 'builtin');
     // Skill and tool switches take effect at once. An open chat is saved as each one is flipped, without touching the
     // instructions being typed; a chat not started yet uses them from its first message.
     const switchSetup = async (changes) => {
@@ -2354,6 +2356,19 @@ const ChatPage = () => {
                                     </Container>
                                 )}
                             </Pop>
+                            <Button
+                                size="xs"
+                                variant="ghost"
+                                color={searchOn && modelUsesTools ? 'primary' : 'secondary'}
+                                selected={searchOn && modelUsesTools}
+                                disabled={!webSearch || !modelUsesTools}
+                                title={!webSearch ? 'Web search is not set up on the server' : !modelUsesTools ? 'This model cannot use tools, so it cannot search the web' : searchOn ? 'Web search is on for this chat. Click to turn it off.' : 'Web search is off for this chat. Click to turn it on.'}
+                                aria-label="Web search"
+                                aria-pressed={searchOn && modelUsesTools}
+                                onClick={toggleSearch}
+                            >
+                                <Icon name={searchOn && modelUsesTools ? 'FiGlobe' : 'FiSlash'} size="xs" />
+                            </Button>
                             <Input
                                 ref={fileInputRef}
                                 type="file"
@@ -2460,20 +2475,16 @@ const ChatPage = () => {
                             <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
                         </Container>
                         {modelUsesTools
-                            ? <Typography size="xxs" color="muted">{savedNote}</Typography>
-                            : <Typography size="xxs" color="warning">The switches are off because this model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
-                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={!webSearch ? 'Web search is not set up on the server.' : !modelUsesTools ? 'This model cannot use tools, and web search is a tool.' : 'Gives the model two tools: search the web, and open a page.'}>
-                            <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
-                                <Typography size="xs" truncate>Web search</Typography>
-                                <Typography size="xxs" color="muted" truncate>{!webSearch ? 'Not set up on the server' : 'The model decides when to search. Search words go to the search service set on the server.'}</Typography>
-                            </Container>
-                            <Switch size="xs" checked={searchOn && modelUsesTools} disabled={!webSearch || !modelUsesTools} onChange={toggleSearch} aria-label="Web search" />
-                        </Container>
-                        {tools.map((tool) => (
-                        <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}>
+                            ? <Typography size="xxs" color="muted">Calculator, date and time and reading a web page are always on. Web search has its own button by the message box.</Typography>
+                            : <Typography size="xxs" color="warning">This model cannot use tools. Pick one without the No tools mark.</Typography>}
+                        {connectedTools.length === 0
+                            ? <Typography size="xs" color="muted">No tools are connected yet. Add one under Manage tools.</Typography>
+                            : modelUsesTools && <Typography size="xxs" color="muted">{savedNote}</Typography>}
+                        {connectedTools.map((tool) => (
+                        <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}>
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
                                 <Typography size="xs" truncate>{tool.name}</Typography>
-                                <Typography size="xxs" color="muted" truncate>{tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}</Typography>
+                                <Typography size="xxs" color="muted" truncate>{tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}</Typography>
                             </Container>
                             <Switch size="xs" checked={activeTools.includes(tool.id)} disabled={!modelUsesTools || !tool.ready} onChange={() => toggleTool(tool.id)} aria-label={tool.name} />
                         </Container>
@@ -2529,7 +2540,7 @@ const ChatPage = () => {
                                 {(tools.length > 0 || webSearch) && (
                                     <Row icon="FiTool" label="Tools" title="Choose the tools models may use in this chat" onClick={() => setView('tools')}>
                                         {modelUsesTools
-                                            ? <Typography size="xxs" color="muted">{`${activeTools.length + (searchOn ? 1 : 0)} on`}</Typography>
+                                            ? <Typography size="xxs" color="muted">{`${activeTools.filter((id) => connectedTools.some((tool) => tool.id === id)).length} connected on`}</Typography>
                                             : <Badge size="xxs" color="warning" title="The chosen model cannot use tools or search the web. Pick a model without the No tools mark.">Not with this model</Badge>}
                                         <Icon name="FiChevronRight" size="xs" />
                                     </Row>
