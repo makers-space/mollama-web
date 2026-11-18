@@ -9,6 +9,7 @@ import {
     Page, Container, Card, Typography, Button, ButtonGroup, FloatingActionButton, Badge, Divider, Input, Select, Switch, Icon, Genie,
     ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor
 } from '@components/Components';
+import { parseFlow } from '@components/Flow';
 import { useNotification } from '@contexts/NotificationContext';
 import { useAuth } from '@contexts/AuthContext';
 import { chatService, deviceService, fileService, modelService, promptService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
@@ -172,7 +173,7 @@ const BLOCK_SPEC = {
     ProgressBar: { props: ['value', 'max', 'label', 'showPercentage', 'color', 'size', 'striped', 'animated'], required: ['value'] },
     CircularProgress: { props: ['size', 'color'] },
     Data: { props: ['data', 'src', 'variant', 'fields'] },
-    Flow: { props: ['nodes', 'edges', 'height'], required: ['nodes'] },
+    Flow: { props: ['content', 'height', 'arrange', 'minimap', 'background'] },
     TreeView: { props: ['items'], required: ['items'] },
     Image: { props: ['src', 'content', 'alt', 'width', 'height'] },
     Video: { props: ['src', 'title'], required: ['src'] },
@@ -185,7 +186,11 @@ const BLOCK_SPEC = {
     Switch: { props: ['label', 'defaultChecked'] }
 };
 const NODE_KEYS = ['component', 'props', 'children'];
-const FLOW_SHAPES = ['rectangle', 'circle', 'diamond', 'cylinder'];
+const FLOW_ARRANGE = ['lr', 'tb', 'grid', 'circle'];
+const FLOW_BACKGROUNDS = ['dots', 'lines', 'cross'];
+// A diagram is handed to Flow as the text the model wrote, in Flow's own format, so everything that format can say
+// (connector styles, arrowheads, groups, sizes, places) is drawn as written.
+const flowText = (content) => `<Flow>\n${String(content ?? '')}\n</Flow>`;
 const FIELD_COMPONENTS = { Badge, Typography, ProgressBar };
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isText = (value) => typeof value === 'string' || typeof value === 'number';
@@ -225,12 +230,9 @@ const checkNode = (node, parent = null) => {
         if (bad(props.items)) return 'TreeView needs <Item label="..." /> tags inside it, each with a label.';
     }
     if (name === 'Flow') {
-        if (!Array.isArray(props.nodes) || props.nodes.length === 0) return 'Flow needs at least one <Node /> inside it.';
-        if (props.nodes.some((item) => !isObject(item) || !isText(item.id) || !isText(item.label))) return 'Flow: every <Node /> needs an id and a label.';
-        const ids = new Set(props.nodes.map((item) => String(item.id)));
-        if (props.edges !== undefined && !Array.isArray(props.edges)) return 'Flow: "edges" must be a list.';
-        const broken = (props.edges || []).find((edge) => !isObject(edge) || !ids.has(String(edge.source)) || !ids.has(String(edge.target)));
-        if (broken) return 'Flow: every <Edge /> needs source and target set to the id of a Node.';
+        const flow = parseFlow(flowText(props.content));
+        if (flow.error) return `Flow: ${flow.error}`;
+        if (!flow.nodes.some((node) => node.type !== 'group')) return 'Flow needs at least one <Node id="..." label="..." /> inside it.';
     }
     if (name === 'Select' && props.options !== undefined && (!Array.isArray(props.options) || props.options.some((option) => !isObject(option) || !isText(option.label)))) {
         return 'Select: "options" must be a list of {"value", "label"} objects.';
@@ -238,38 +240,46 @@ const checkNode = (node, parent = null) => {
     return null;
 };
 
-const layoutFlow = (nodes, edges = []) => {
-    const links = edges.map((edge, index) => ({
-        id: `edge-${index}`,
-        source: String(edge.source),
-        target: String(edge.target),
-        label: isText(edge.label) ? String(edge.label) : undefined,
-        type: 'smoothstep'
-    }));
-    const level = new Map(nodes.map((node) => [String(node.id), 0]));
-    for (let pass = 0; pass < nodes.length; pass++) {
-        for (const edge of links) {
-            if (level.get(edge.target) <= level.get(edge.source) && level.get(edge.source) < nodes.length) {
-                level.set(edge.target, level.get(edge.source) + 1);
+// Boxes the model gave no place to are arranged by Flow itself once it has measured them, so a large box never sits
+// on top of its neighbour. Boxes the model placed with x and y stay where it put them.
+const ChatFlow = ({ content, height, arrange, minimap, background }) => {
+    const flow = useRef(null);
+    const text = flowText(content);
+    const placed = useMemo(() => parseFlow(text).nodes.length > 0 && /<\s*(Node|Group)\b[^>]*\sx\s*=/i.test(text), [text]);
+    const kind = FLOW_ARRANGE.includes(String(arrange).toLowerCase()) ? String(arrange).toLowerCase() : 'lr';
+    useEffect(() => {
+        if (placed) return undefined;
+        let tries = 0;
+        let timer = null;
+        const run = () => {
+            const instance = flow.current?.instance?.();
+            const boxes = instance?.getNodes?.() || [];
+            const measured = boxes.length > 0 && boxes.every((box) => instance.getInternalNode?.(box.id)?.measured?.width);
+            // Once every box has been measured it is arranged; if that never comes, it is arranged all the same.
+            if (measured || tries >= 40) {
+                // Arranged twice: rich text in a box (a table, code) can still be growing at the first measure.
+                if (boxes.length > 0) timer = setTimeout(() => { flow.current?.arrange(kind); timer = setTimeout(() => flow.current?.arrange(kind), 600); }, 60);
+                return;
             }
-        }
-    }
-    const rows = new Map();
-    return {
-        nodes: nodes.map((node) => {
-            const id = String(node.id);
-            const column = level.get(id);
-            const row = rows.get(column) || 0;
-            rows.set(column, row + 1);
-            return {
-                id,
-                type: 'editable',
-                position: { x: column * 240, y: row * 110 },
-                data: { label: String(node.label), color: node.color, shape: FLOW_SHAPES.includes(node.shape) ? node.shape : 'rectangle' }
-            };
-        }),
-        edges: links
-    };
+            tries += 1;
+            timer = setTimeout(run, 80);
+        };
+        timer = setTimeout(run, 120);
+        return () => clearTimeout(timer);
+    }, [text, kind, placed]);
+    const pattern = FLOW_BACKGROUNDS.includes(String(background).toLowerCase()) ? String(background).toLowerCase() : null;
+    return (
+        <Flow
+            ref={flow}
+            content={text}
+            readOnly
+            toolbar="view"
+            height={height || '380px'}
+            minimap={minimap === true}
+            background={String(background).toLowerCase() !== 'none'}
+            {...(pattern ? { backgroundVariant: pattern } : {})}
+        />
+    );
 };
 
 const treeData = (items = []) => {
@@ -301,6 +311,12 @@ const dataFields = (fields = {}) => {
 const LocalField = ({ Component, ...props }) => {
     const [value, setValue] = useState('');
     return <Component {...props} value={value} onChange={(next) => setValue(next?.target ? next.target.value : next)} />;
+};
+
+// A switch in a reply keeps its own on and off, so flipping it shows.
+const LocalSwitch = ({ defaultChecked, ...props }) => {
+    const [on, setOn] = useState(defaultChecked === true);
+    return <Switch {...props} checked={on} onChange={(next) => setOn(typeof next === 'boolean' ? next : Boolean(next?.target?.checked))} />;
 };
 
 const MODEL_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', 'ply', 'dae', '3mf', 'vox', '3ds'];
@@ -637,16 +653,13 @@ const renderBlock = (node, context, key, parent = null) => {
         const onClick = isText(send) && String(send).trim() && context.send && !context.live ? () => context.send(String(send)) : undefined;
         return <FloatingActionButton key={key} parentType="card" variant={color || 'primary'} {...rest} onClick={onClick} />;
     }
-    if (name === 'ProgressBar') return <ProgressBar key={key} width="100%" showLabel={Boolean(props.label)} {...props} value={Number(props.value)} />;
+    if (name === 'ProgressBar') return <ProgressBar key={key} width="100%" showLabel={Boolean(props.label) || props.showPercentage === true} {...props} value={Number(props.value)} />;
     if (name === 'CircularProgress') return <CircularProgress key={key} {...props} />;
     if (name === 'Data' && props.src) {
         return <WebFile key={key} address={props.src} kind="table">{(text) => <WebTable text={text} address={props.src} variant={props.variant} fields={props.fields} />}</WebFile>;
     }
     if (name === 'Data') return <Data key={key} size="xs" width="100%" variant={props.variant} data={props.data} fieldConfig={dataFields(props.fields)} />;
-    if (name === 'Flow') {
-        const graph = layoutFlow(props.nodes, props.edges);
-        return <Flow key={key} height={props.height || '380px'} toolbar="view" connectable={false} deletable={false} enableNodeCreation={false} nodes={graph.nodes} edges={graph.edges} />;
-    }
+    if (name === 'Flow') return <ChatFlow key={key} {...props} />;
     if (name === 'TreeView') return <TreeView key={key} size="sm" data={treeData(props.items)} />;
     if (name === 'Editor' && props.src) {
         const extension = extensionOf(props.src);
@@ -665,7 +678,7 @@ const renderBlock = (node, context, key, parent = null) => {
     }
     if (name === 'Input') return <LocalField key={key} Component={Input} size="sm" {...props} />;
     if (name === 'Select') return <LocalField key={key} Component={Select} size="sm" {...props} options={props.options || []} />;
-    if (name === 'Switch') return <Switch key={key} {...props} />;
+    if (name === 'Switch') return <LocalSwitch key={key} {...props} />;
     if (name === 'Model3D' && props.src) {
         const { src, content: _content, format, fileName: _fileName, ...rest } = props;
         const kind = String(format || extensionOf(src)).toLowerCase();
@@ -718,7 +731,7 @@ class BlockBoundary extends React.Component {
     }
 }
 
-const RAW_TAGS = ['Model3D', 'Editor', 'Image'];
+const RAW_TAGS = ['Model3D', 'Editor', 'Image', 'Flow'];
 const TEXT_TAGS = ['Typography', 'Badge', 'Button'];
 const NUMBER_PROPS = ['value', 'max', 'columns', 'rows'];
 const TAG_NAMES = [
@@ -825,16 +838,7 @@ const toNode = (element) => {
         if (Object.keys(fields).length > 0) out.fields = fields;
         return { component: 'Data', props: out };
     }
-    if (tag === 'Flow') {
-        return {
-            component: 'Flow',
-            props: {
-                ...props,
-                nodes: elements(children, 'Node').map((node) => ({ ...node.props, label: node.props.label ?? textOfMarkup(node.children) })),
-                edges: elements(children, 'Edge').map((edge) => edge.props)
-            }
-        };
-    }
+    if (tag === 'Flow') return { component: 'Flow', props: { ...props, content: rawText(children) } };
     if (tag === 'TreeView') return { component: 'TreeView', props: { ...props, items: treeItems(children) } };
     if (tag === 'Select') {
         const options = elements(children, 'Option').map((option) => ({ value: option.props.value ?? option.props.label, label: option.props.label ?? textOfMarkup(option.children) }));
