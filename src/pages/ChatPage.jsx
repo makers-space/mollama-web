@@ -1263,6 +1263,10 @@ const ChatPage = () => {
     const [webSearch, setWebSearch] = useState(false);
     const [draftSearch, setDraftSearch] = useState(true);
     const [skills, setSkills] = useState([]);
+    const [skillSources, setSkillSources] = useState([]);
+    const [maxSkills, setMaxSkills] = useState(8);
+    const [skillSearch, setSkillSearch] = useState('');
+    const [skillSource, setSkillSource] = useState('all');
     const [tools, setTools] = useState([]);
     const [text, setText] = useState(() => {
         try {
@@ -1495,6 +1499,8 @@ const ChatPage = () => {
         // Whether the server can search does not depend on any computer, so it is read here and not with the model list.
         chatService.skills().then((result) => {
             setSkills(result.skills || []);
+            setSkillSources(result.sources || []);
+            if (result.maxSkills) setMaxSkills(result.maxSkills);
             setTools(result.tools || []);
             setWebSearch(Boolean(result.webSearch));
         }).catch(() => setSkills([]));
@@ -1522,6 +1528,14 @@ const ChatPage = () => {
     // Only a model marked as able to use tools is offered them; one whose abilities are not known yet is given the benefit of the doubt.
     const modelAbilities = models.find((model) => model.name === currentModel)?.capabilities;
     const modelUsesTools = !modelAbilities || modelAbilities.includes('tools');
+    // The skills shown: the ones turned on first, then the rest, narrowed by the search words and the project picked.
+    const shownSkills = useMemo(() => {
+        const words = skillSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return skills
+            .filter((skill) => (skillSource === 'all' ? true : skillSource === 'on' ? activeSkills.includes(skill.id) : skill.source === skillSource))
+            .filter((skill) => words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)))
+            .sort((a, b) => Number(activeSkills.includes(b.id)) - Number(activeSkills.includes(a.id)));
+    }, [skills, skillSearch, skillSource, activeSkills.join(',')]);
     const toggleSkill = (id) => setDraftSetup((now) => ({
         ...now,
         skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id]
@@ -2417,15 +2431,35 @@ const ChatPage = () => {
                             <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Skills</Button>
                             <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => setDraftSetup((now) => ({ ...now, skills: null }))}>Use defaults</Button>
                         </Container>
-                        {skills.map((skill) => (
-                        <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={skill.description}>
+                        <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
+                            <Input size="xs" width="100%" placeholder={`Search ${skills.length} skills`} value={skillSearch} onChange={(event) => setSkillSearch(event.target.value)} aria-label="Search skills" />
+                            <Select
+                                size="xs"
+                                width="190px"
+                                value={skillSource}
+                                options={[{ value: 'all', label: 'All projects' }, { value: 'on', label: `Turned on (${activeSkills.length})` }, ...skillSources.map((source) => ({ value: source.id, label: `${source.name} (${source.count})` }))]}
+                                onChange={(chosen) => setSkillSource(String(chosen?.target?.value ?? chosen))}
+                                aria-label="Show skills from"
+                            />
+                        </Container>
+                        <Typography size="xxs" color="muted">
+                            {`${activeSkills.length} of ${maxSkills} on. `}{activeSkills.length >= maxSkills ? 'Turn one off to add another.' : 'Each skill is extra instructions the model reads with every message, so turn on only what this chat needs.'}
+                        </Typography>
+                        {shownSkills.length === 0 && <Typography size="xs" color="muted">No skill matches.</Typography>}
+                        {shownSkills.slice(0, 40).map((skill) => (
+                        <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={`${skill.description}${skill.credit ? `\n\nFrom ${skill.credit}` : ''}`}>
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
-                                <Typography size="xs" truncate>{skill.name}</Typography>
+                                <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
+                                    <Typography size="xs" truncate>{skill.name}</Typography>
+                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Written for an agent that can run commands or open files. Its guidance works here; the steps that need those do not yet.">Partly works</Badge>}
+                                    <Typography size="xxs" color="muted">{`${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`}</Typography>
+                                </Container>
                                 <Typography size="xxs" color="muted" truncate>{skill.description}</Typography>
                             </Container>
-                            <Switch size="xs" checked={activeSkills.includes(skill.id)} disabled={false} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
+                            <Switch size="xs" checked={activeSkills.includes(skill.id)} disabled={!activeSkills.includes(skill.id) && activeSkills.length >= maxSkills} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
                         </Container>
                         ))}
+                        {shownSkills.length > 40 && <Typography size="xxs" color="muted">{`Showing 40 of ${shownSkills.length}. Search or pick a project to narrow the list.`}</Typography>}
                     </Container>
                 )}
                 {view === 'main' && (
