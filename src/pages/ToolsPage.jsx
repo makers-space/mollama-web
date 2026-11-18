@@ -11,8 +11,12 @@ const APP_ICONS = {
     'monday.com': 'TbBrandMonday', GitHub: 'SiGithub', GitLab: 'SiGitlab', Sentry: 'SiSentry', Netlify: 'SiNetlify', Cloudflare: 'SiCloudflare', 'Cloudflare Docs': 'SiCloudflare',
     Supabase: 'SiSupabase', Neon: 'SiNeon', PostHog: 'SiPosthog', Context7: 'SiUpstash', Miro: 'SiMiro', Webflow: 'SiWebflow', Wix: 'SiWix', 'WordPress.com': 'SiWordpress',
     Calendly: 'SiCalendly', Stripe: 'SiStripe', 'Hugging Face': 'SiHuggingface', Zapier: 'SiZapier', Make: 'SiMake',
-    DeepWiki: 'FiBookOpen', Exa: 'FiSearch', Firecrawl: 'FiSearch', Tavily: 'FiSearch'
+    DeepWiki: 'FiBookOpen', Exa: 'FiSearch', Firecrawl: 'FiSearch', Tavily: 'FiSearch',
+    Blender: 'SiBlender', 'Chrome DevTools': 'SiGooglechrome', Playwright: 'FiMousePointer', Docker: 'SiDocker', Xcode: 'SiXcode', Godot: 'SiGodotengine', FreeCAD: 'SiFreecad',
+    'Ableton Live': 'FiMusic', 'Files on this computer': 'FiFolder', 'Excel files': 'FiGrid', Git: 'SiGit', 'Fetch a web page': 'FiDownloadCloud', Memory: 'FiDatabase',
+    'Date and time': 'FiClock', 'Step-by-step thinking': 'FiList'
 };
+const MADE_BY = { maker: 'Made by the app\'s own maker', standard: 'Made by the group behind the tool-server standard', community: 'Made by the community' };
 const HEALTH_COLORS = { healthy: 'success', unchecked: 'default', signin: 'warning', empty: 'warning', busy: 'warning', offline: 'default' };
 
 // A sign-in page opens in a tab of its own. The tab is opened at the click, before anything is asked of the server,
@@ -97,6 +101,8 @@ const ToolsPage = () => {
     const [adding, setAdding] = useState(null);
     const [find, setFind] = useState('');
     const [keyHelp, setKeyHelp] = useState(null);
+    const [localApps, setLocalApps] = useState([]);
+    const [localHelp, setLocalHelp] = useState(null);
     const localBridge = window.desktop?.tools || null;
 
     const replace = (server) => setServers((current) => (current || []).map((one) => (one.id === server.id ? server : one)));
@@ -126,7 +132,7 @@ const ToolsPage = () => {
 
     useEffect(() => {
         load();
-        toolService.catalogue().then((catalogue) => setApps(catalogue.apps || [])).catch(() => undefined);
+        toolService.catalogue().then((catalogue) => { setApps(catalogue.apps || []); setLocalApps(catalogue.localApps || []); }).catch(() => undefined);
         deviceService.listDevices().then((computers) => setDevices(computers.devices || [])).catch(() => undefined);
         window.desktop?.deviceState?.().then((state) => setHere(state?.deviceId || null));
         window.addEventListener('focus', load);
@@ -235,6 +241,7 @@ const ToolsPage = () => {
             const { server } = await toolService.add({ kind: 'local', name: local.name.trim(), device: here, localId: made.localId });
             setServers((current) => [...(current || []), server]);
             setLocal({ name: '', command: '', args: '' });
+            setLocalHelp(null);
         } catch (error) {
             showError(describeError(error, 'This tool server could not be added on this computer.'));
         }
@@ -362,7 +369,47 @@ const ToolsPage = () => {
                                     </>
                                 )}
 
+                                {localApps.length > 0 && (
+                                    <>
+                                        <Section title="Apps you can set up" note="Tool servers that run on your own computer. Choosing one shows what it needs and fills in the form below; nothing runs until you add it." />
+                                        <Container layout="grid" columns={4} gap="sm" padding="none" width="100%">
+                                            {localApps.map((entry) => (
+                                                <Card key={entry.name} layout="flex-column" gap="xs" padding="md" width="100%" minWidth="0" hover={false} shadow={false}>
+                                                    <Container layout="flex" align="center" justify="between" gap="sm" padding="none" width="100%" wrap={false}>
+                                                        <Container layout="flex" align="center" gap="sm" padding="none" wrap={false} minWidth="0">
+                                                            <Icon name={APP_ICONS[entry.name] || 'FiMonitor'} size="md" color="primary" />
+                                                            <Typography size="sm" weight="semibold" truncate>{entry.name}</Typography>
+                                                        </Container>
+                                                        <Button size="xs" color={localHelp?.name === entry.name ? 'secondary' : 'primary'} onClick={() => { setLocalHelp(entry); setLocal({ name: entry.name, command: entry.command, args: entry.args }); }}>
+                                                            <Icon name="FiArrowDown" size="xs" />Set up
+                                                        </Button>
+                                                    </Container>
+                                                    <Typography size="xs">{entry.does}.</Typography>
+                                                    {entry.only && <Typography size="xxs" color="muted">{entry.only} only</Typography>}
+                                                </Card>
+                                            ))}
+                                        </Container>
+                                    </>
+                                )}
+
                                 <Section title="Add an app on this computer" note="The program and what to pass to it come from the app's MCP setup instructions. They are kept on this computer only." />
+                                {localHelp && (
+                                    <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false}>
+                                        <Container layout="flex" align="center" gap="sm" padding="none" wrap={false}>
+                                            <Icon name={APP_ICONS[localHelp.name] || 'FiMonitor'} size="sm" color="primary" />
+                                            <Typography size="sm" weight="semibold">Before adding {localHelp.name}</Typography>
+                                            <Typography size="xxs" color="muted">{MADE_BY[localHelp.by]}</Typography>
+                                        </Container>
+                                        {localHelp.needs.map((need, index) => <Typography key={need} size="xs">{index + 1}. {need}</Typography>)}
+                                        <Typography size="xs">It will run this on your computer: <Typography as="span" size="xs" font="monospace">{localHelp.command} {localHelp.args}</Typography></Typography>
+                                        {localHelp.caution && (
+                                            <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                                                <Icon name="FiAlertTriangle" size="xs" color="warning" />
+                                                <Typography size="xs">{localHelp.caution}</Typography>
+                                            </Container>
+                                        )}
+                                    </Card>
+                                )}
                                 <Card layout="flex-column" gap="sm" padding="sm" width="100%" hover={false}>
                                     {localBridge && here ? (
                                         <>
@@ -372,7 +419,7 @@ const ToolsPage = () => {
                                                 <Input size="sm" label="What to pass to it" value={local.args} onChange={(e) => setLocal((form) => ({ ...form, args: e.target.value }))} placeholder="blender-mcp" width="100%" />
                                             </Container>
                                             <Container layout="flex" justify="end" padding="none" width="100%">
-                                                <Button size="sm" color="primary" disabled={adding === 'local' || !local.name.trim() || !local.command.trim()} onClick={addLocal}>
+                                                <Button size="sm" color="primary" disabled={adding === 'local' || !local.name.trim() || !local.command.trim() || /<[^>]*>/.test(local.args)} onClick={addLocal}>
                                                     <Icon name="FiPlus" size="xs" />{adding === 'local' ? 'Adding…' : 'Add'}
                                                 </Button>
                                             </Container>
