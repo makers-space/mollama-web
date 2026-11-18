@@ -184,7 +184,7 @@ const BLOCK_SPEC = {
     Input: { props: ['label', 'placeholder', 'multiline', 'rows'] },
     Select: { props: ['label', 'placeholder', 'options'] },
     Switch: { props: ['label', 'defaultChecked'] },
-    Frame: { props: ['content', 'template', 'height', 'title'] }
+    Frame: { props: ['content', 'template', 'height', 'title', 'palette'] }
 };
 const NODE_KEYS = ['component', 'props', 'children'];
 const FLOW_ARRANGE = ['lr', 'tb', 'grid', 'circle'];
@@ -347,7 +347,21 @@ const buildFrame = async (content, template) => {
     }
     return page;
 };
-const ChatFrame = ({ content, template, height, title, live }) => {
+// palette="ground:background, muted:text 65%" gives the page's own colour variables the app theme's colours: each pair
+// is a variable of the page and a theme colour, with an optional strength.
+const framePalette = (palette) => {
+    if (!isText(palette)) return null;
+    const pairs = String(palette).split(',').map((pair) => pair.split(':').map((part) => part.trim())).filter((pair) => pair.length === 2 && /^[\w-]+$/.test(pair[0]));
+    const variables = {};
+    for (const [name, value] of pairs) {
+        const [token, strength] = value.split(/\s+/);
+        if (!/^[a-z]+$/.test(token)) continue;
+        variables[name] = /^\d{1,3}%$/.test(strength || '') ? `color-mix(in srgb, var(--app-${token}) ${strength}, transparent)` : `var(--app-${token})`;
+    }
+    return Object.keys(variables).length > 0 ? variables : null;
+};
+const ChatFrame = ({ content, template, height, title, palette, live }) => {
+    const variables = useMemo(() => framePalette(palette), [palette]);
     const [state, setState] = useState({ loading: true });
     useEffect(() => {
         if (live) return undefined;
@@ -362,7 +376,7 @@ const ChatFrame = ({ content, template, height, title, live }) => {
     if (live) return <Typography size="xs" color="muted">Building the page…</Typography>;
     if (state.problem) return <Typography size="xxs" color="warning">[Not drawn: {state.problem}]</Typography>;
     if (state.loading) return <CircularProgress size="sm" />;
-    return <Frame html={state.html} height={isText(height) ? String(height) : '520px'} title={isText(title) ? String(title) : 'Page'} />;
+    return <Frame html={state.html} height={isText(height) ? String(height) : '520px'} title={isText(title) ? String(title) : 'Page'} variables={variables} />;
 };
 
 const MODEL_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', 'ply', 'dae', '3mf', 'vox', '3ds'];
@@ -1684,7 +1698,7 @@ const ChatPage = () => {
         if (stoppedRef.current && stoppedRef.current === turnRef.current) return;
         if (event.type === 'queued') setLive((now) => now && { ...now, ahead: event.ahead });
         if (event.type === 'start') setLive((now) => now && { ...now, started: true, ahead: null, sharing: event.sharing || 0, loaded: event.loaded !== false });
-        if (event.type === 'note') setLive((now) => now && { ...now, note: event.text });
+        if (event.type === 'note') setLive((now) => now && { ...now, note: event.text || null });
         if (event.type === 'thinking') setLive((now) => now && { ...now, thinking: now.thinking + event.text });
         if (event.type === 'token') setLive((now) => now && { ...now, content: now.content + event.text });
         if (event.type === 'replace') setLive((now) => now && { ...now, content: event.text });
@@ -2321,7 +2335,7 @@ const ChatPage = () => {
                         ))}
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                                {live.steps?.length > 0 && <Steps steps={live.steps} live={!live.stopping} />}
+                                {live.steps?.length > 0 && <Steps steps={live.steps} live={!live.stopping && Boolean(live.note)} />}
                                 {live.permission && (
                                     <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false} borderColor="primary">
                                         <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
@@ -2343,6 +2357,7 @@ const ChatPage = () => {
                                 {live.thinking && <Thinking text={live.thinking} startOpen={!live.stopping} />}
                                 {live.content && <BlockContext.Provider value={LIVE_BLOCKS}><Markdown text={live.content} /></BlockContext.Provider>}
                                 {live.content && live.stopping && <Typography size="sm" color="muted">Stopped before it finished.</Typography>}
+                                {live.content && live.note && !live.stopping && <Typography key={live.note} color="secondary" size="xxs" animation="typewriter">{live.note}</Typography>}
                                 {!live.content && (
                                         <Typography key={liveStatus(live)} color="secondary" size="xxs" animation="typewriter">{liveStatus(live)}</Typography>
                                     )}
