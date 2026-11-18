@@ -489,9 +489,10 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
             )}
 
             {paged > PAGE_SIZES[0] && (
-                <Pagination size="sm" padding="none" page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} pageSize={size} pageSizes={PAGE_SIZES} onPageSize={(chosen) => turn(1, chosen)}>
-                    <Typography size="xs" color="muted">per page · {paged} models, not counting the recommended ones</Typography>
-                </Pagination>
+                <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                    <Pagination size="sm" padding="none" page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} pageSize={size} pageSizes={PAGE_SIZES} onPageSize={(chosen) => turn(1, chosen)} />
+                    <Typography size="xxs" color="muted">Models per page · page {page} of {pages} · {paged} models</Typography>
+                </Container>
             )}
 
             {canManage && (
