@@ -60,7 +60,7 @@ const Row = ({ icon, iconColor = 'primary', label, title, size = 'xs', color = '
     </Container>
 );
 
-const Pop = ({ label, icon, open, onOpen, onClose, width = '320px', fab = false, iconOnly = false, iconEnd = false, children, ...button }) => {
+const Pop = ({ label, icon, open, onOpen, onClose, width = '320px', tall = false, fab = false, iconOnly = false, iconEnd = false, children, ...button }) => {
     const trigger = useRef(null);
     const closedAt = useRef(0);
     const close = useCallback(() => {
@@ -85,9 +85,9 @@ const Pop = ({ label, icon, open, onOpen, onClose, width = '320px', fab = false,
                 </Button>
             )}
             {createPortal(
-                <Genie key={width} visible={open} onClose={close} triggerRef={trigger} variant="popover" width={width} maxWidth="94vw" maxHeight="72vh" padding="xs">
+                <Genie key={width} visible={open} onClose={close} triggerRef={trigger} variant="popover" width={width} maxWidth="94vw" maxHeight={tall ? '88vh' : '72vh'} padding="xs">
                     {open && (
-                        <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" maxHeight="66vh" overflow="auto">
+                        <Container layout="flex-column" wrap={false} gap="xs" padding="xs" width="100%" minHeight={tall ? 'min(520px, 70vh)' : undefined} maxHeight={tall ? '82vh' : '66vh'} overflow="auto">
                             {children}
                         </Container>
                     )}
@@ -1218,7 +1218,16 @@ const Centered = ({ gap = 'sm', children }) => (
     </Container>
 );
 
-const emptySetup = { instructions: [], skills: null, tools: [], temperature: '', num_ctx: '' };
+const MODEL_SETTINGS = [
+    { key: 'temperature', label: 'Creativity (temperature, 0 to 2)', help: "Lower is more exact, higher is more varied. Empty uses the model's own setting.", min: 0, max: 2, whole: false },
+    { key: 'num_ctx', label: 'Context size (tokens)', help: 'How much the model reads at once. Empty lets Mollama choose. Larger sizes use more memory.', min: 512, max: 262144, whole: true },
+    { key: 'num_predict', label: 'Longest reply (tokens)', help: 'Stops a reply at this length. Empty or -1 means no limit.', min: -1, max: 100000, whole: true },
+    { key: 'top_p', label: 'Word choice breadth (top p, 0 to 1)', help: 'Lower keeps to the most likely words. Empty uses the model setting.', min: 0, max: 1, whole: false },
+    { key: 'top_k', label: 'Words considered (top k)', help: 'How many likely next words the model picks from. Empty uses the model setting.', min: 0, max: 500, whole: true },
+    { key: 'repeat_penalty', label: 'Repetition penalty', help: 'Higher discourages repeating the same words. Around 1.1 is usual.', min: 0, max: 5, whole: false },
+    { key: 'seed', label: 'Seed', help: 'The same number gives the same reply to the same message. Empty gives a different reply each time.', min: null, max: null, whole: true }
+];
+const emptySetup = { instructions: [], skills: null, tools: [], ...Object.fromEntries(MODEL_SETTINGS.map((setting) => [setting.key, ''])) };
 
 const ChatPage = () => {
     const { id: routeId } = useParams();
@@ -1400,7 +1409,7 @@ const ChatPage = () => {
             instructions: chat.instructions || [],
             skills: chat.skills || null,
             tools: chat.tools || [],
-            temperature: chat.options?.temperature ?? '',
+            ...Object.fromEntries(MODEL_SETTINGS.map((setting) => [setting.key, chat.options?.[setting.key] ?? ''])),
             num_ctx: chat.options?.num_ctx ?? ''
         });
     }, [chat?.id, chat?.updatedAt]);
@@ -1479,8 +1488,13 @@ const ChatPage = () => {
 
     const setupBody = (setup = draftSetup) => {
         const options = {};
-        if (setup.temperature !== '' && !Number.isNaN(Number(setup.temperature))) options.temperature = Number(setup.temperature);
-        if (setup.num_ctx !== '' && !Number.isNaN(Number(setup.num_ctx))) options.num_ctx = Number(setup.num_ctx);
+        for (const setting of MODEL_SETTINGS) {
+            const raw = String(setup[setting.key] ?? '').trim();
+            const value = Number(raw);
+            if (raw === '' || Number.isNaN(value)) continue;
+            const clean = setting.whole ? Math.round(value) : value;
+            options[setting.key] = setting.min === null ? clean : Math.min(setting.max, Math.max(setting.min, clean));
+        }
         const instructions = setup.instructions
             .filter((item) => item.text.trim())
             .map((item, index) => ({ name: item.name.trim() || `Instruction ${index + 1}`, text: item.text, source: item.source || 'ai-base', path: item.path || null }));
@@ -2347,7 +2361,8 @@ const ChatPage = () => {
                 open={pop === 'setup'}
                 onOpen={() => openPop('setup')}
                 onClose={closePop}
-                width="360px"
+                width="480px"
+                tall
             >
                 {view === 'files' && <FileBrowser mode="read" onPick={articleFromFile} onBack={() => setView('main')} />}
                 {view === 'saved' && <SavedInstructions onAdd={addArticle} onBack={() => setView('main')} full={articlesFull} />}
@@ -2457,24 +2472,20 @@ const ChatPage = () => {
                         </Container>
                         {advancedOpen && (
                             <>
-                                <Input
-                                    label="Creativity (temperature, 0 to 2)"
-                                    helpText="Lower is more exact, higher is more varied. Empty uses the model's own setting."
-                                    type="number"
-                                    size="xs"
-                                    width="100%"
-                                    value={draftSetup.temperature}
-                                    onChange={(event) => setDraftSetup((now) => ({ ...now, temperature: event.target.value }))}
-                                />
-                                <Input
-                                    label="Context size (tokens)"
-                                    helpText="How much the model reads at once. Empty lets Mollama choose. Larger sizes use more memory."
-                                    type="number"
-                                    size="xs"
-                                    width="100%"
-                                    value={draftSetup.num_ctx}
-                                    onChange={(event) => setDraftSetup((now) => ({ ...now, num_ctx: event.target.value }))}
-                                />
+                                <Container layout="grid" columns={2} gap="xs" padding="none" width="100%">
+                                    {MODEL_SETTINGS.map((setting) => (
+                                        <Input
+                                            key={setting.key}
+                                            label={setting.label}
+                                            helpText={setting.help}
+                                            type="number"
+                                            size="xs"
+                                            width="100%"
+                                            value={draftSetup[setting.key]}
+                                            onChange={(event) => setDraftSetup((now) => ({ ...now, [setting.key]: event.target.value }))}
+                                        />
+                                    ))}
+                                </Container>
                             </>
                         )}
                         <Container layout="flex" align="center" justify="between" gap="xs" padding="none" width="100%">
