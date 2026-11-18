@@ -116,6 +116,8 @@ const Empty = ({ icon, title, text }) => (
 );
 
 const abilities = (model) => model.capabilities.map((ability) => ABILITY_LABELS[ability]).filter(Boolean);
+const cannotChat = (model) => (model.canChat ?? !model.capabilities.includes('embedding')) === false;
+const NoChatBadge = () => <Badge size="xs" color="warning" title="An embedding model. It turns text into numbers for searching and cannot hold a conversation, so the chat page does not offer it.">For search, cannot chat</Badge>;
 
 const DownloadsPanel = ({ jobs, canManage, onResume, onPause, onCancel }) => {
     const order = { downloading: 0, queued: 1, paused: 2, failed: 3 };
@@ -358,6 +360,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
             <Typography size="xs" color="muted">{model.description}</Typography>
             <Container layout="flex" gap="xs" padding="none" align="center">
                 <Badge size="xs" color={FIT_COLORS[model.fit.verdict]}>{model.fit.label}</Badge>
+                {cannotChat(model) && <NoChatBadge />}
                 {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary">{ability}</Badge>)}
             </Container>
             <Container padding="none" flexFill />
@@ -567,6 +570,7 @@ const InstalledTab = ({ installed, canManage, onDelete, elsewhere = {} }) => {
                     {model.description && <Typography size="xs" color="muted">{model.description}</Typography>}
                     <Container layout="flex" gap="xs" padding="none" align="center">
                         {model.personal && <Badge size="xs" color="primary">Yours, on {model.basedOn}</Badge>}
+                        {cannotChat(model) && <NoChatBadge />}
                         {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary">{ability}</Badge>)}
                         {elsewhere[model.name]?.length > 0 && <Badge size="xs" color="tertiary">Also on {elsewhere[model.name].join(', ')}</Badge>}
                     </Container>
