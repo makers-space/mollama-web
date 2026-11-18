@@ -45,6 +45,7 @@
     "react-pdf": "^11.0.0",
     "react-router-dom": "^7.18.5",
     "rehype-highlight": "^7.0.2",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "tiptap-extension-resize-image": "^1.4.7",
     "y-monaco": "^0.1.6",
