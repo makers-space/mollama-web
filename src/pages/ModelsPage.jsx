@@ -379,7 +379,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
     );
 };
 
-const CATALOGUE_PAGE = 48;
+const PAGE_SIZES = [12, 24, 48, 96].map((size) => ({ value: String(size), label: `${size} per page` }));
 const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onPage, loading }) => {
     const top = useRef(null);
     const [purpose, setPurpose] = useState('all');
@@ -400,9 +400,10 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
 
     if (!catalogue) return <Typography size="xs" color="muted">Working out which models fit this device…</Typography>;
     const page = catalogue.page || 1;
-    const pages = Math.max(1, Math.ceil((catalogue.total || 0) / CATALOGUE_PAGE));
-    const turn = (next) => {
-        onPage(next);
+    const size = catalogue.size || 48;
+    const pages = Math.max(1, Math.ceil((catalogue.total || 0) / size));
+    const turn = (next, perPage = size) => {
+        onPage(next, perPage);
         top.current?.scrollIntoView({ block: 'start' });
     };
 
@@ -482,10 +483,13 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                 </>
             )}
 
-            {pages > 1 && (
+            {catalogue.total > PAGE_SIZES[0].value && (
                 <Container layout="flex-column" align="center" gap="xs" padding="none" width="100%">
-                    <Pagination size="md" span={9} page={page} pages={pages} disabled={loading} onPage={turn} width="100%" />
-                    <Typography size="xs" color="muted">Page {page} of {pages} · {catalogue.total} models</Typography>
+                    <Pagination size="md" span={9} page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} width="100%" />
+                    <Container layout="flex" align="center" justify="center" gap="sm" padding="none">
+                        <Typography size="xs" color="muted">Page {page} of {pages} · {catalogue.total} models</Typography>
+                        <Select size="xs" value={String(size)} options={PAGE_SIZES} disabled={loading} onChange={(e) => turn(1, Number(e.target.value))} />
+                    </Container>
                 </Container>
             )}
 
@@ -866,10 +870,10 @@ const ModelsPage = () => {
         return () => window.removeEventListener('models-open-online', open);
     }, []);
     // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
-    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, all = false } = {}) => {
+    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, size = Number(localStorage.getItem('mollama-models-per-page')) || 48, all = false } = {}) => {
         setCatalogueLoading(true);
         try {
-            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(all ? { all: true } : {}) });
+            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...([12, 24, 96].includes(size) ? { size } : {}), ...(all ? { all: true } : {}) });
             setCatalogue(result);
         } catch (error) {
             notifyError(describeError(error, 'The model list could not be loaded.'));
@@ -1148,7 +1152,10 @@ const ModelsPage = () => {
                         onDownload={download}
                         loading={catalogueLoading}
                         onSearch={(q) => device && loadCatalogue(device.id, { q })}
-                        onPage={(page) => device && catalogue && loadCatalogue(device.id, { q: catalogue.query || '', page })}
+                        onPage={(page, size) => {
+                            localStorage.setItem('mollama-models-per-page', String(size));
+                            if (device && catalogue) loadCatalogue(device.id, { q: catalogue.query || '', page, size });
+                        }}
                     />
                 )}
                 {device?.online && tab === 'installed' && <InstalledTab installed={installed} canManage={canManage} onDelete={deleteModel} elsewhere={elsewhere} />}
