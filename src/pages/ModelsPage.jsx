@@ -21,7 +21,7 @@ const PURPOSES = [
     { id: 'reasoning', label: 'Reasoning' }
 ];
 
-const PICK_LABELS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality' };
+const PICK_LABELS = { fast: 'Fastest', balanced: 'Best balance', best: 'Best quality', code: 'Best for code', reasoning: 'Best at reasoning' };
 const FIT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'tertiary' };
 const RESUMABLE = ['DOWNLOAD_INTERRUPTED', 'OLLAMA_DOWN', 'DISK_FULL'];
 const ABILITY_LABELS = { tools: 'Can use tools', vision: 'Can read images', thinking: 'Thinks step by step' };
@@ -405,7 +405,8 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
     if (!catalogue) return <Typography size="xs" color="muted">Working out which models fit this device…</Typography>;
     const page = catalogue.page || 1;
     const size = catalogue.size || perPage();
-    const pages = Math.max(1, Math.ceil((catalogue.total || 0) / size));
+    const paged = catalogue.paged ?? catalogue.total ?? 0;
+    const pages = Math.max(1, Math.ceil(paged / size));
     const turn = (next, perPage = size) => {
         onPage(next, perPage);
         top.current?.scrollIntoView({ block: 'start' });
@@ -413,7 +414,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
 
     const jobFor = (tag) => jobs.find((job) => job.model === tag && job.status !== 'completed' && job.status !== 'cancelled');
     const shown = catalogue.models.filter((model) => purpose === 'all' || model.goodFor.includes(purpose));
-    const recommended = shown.filter((model) => model.pick);
+    const recommended = (catalogue.picks || []).filter((model) => purpose === 'all' || model.goodFor.includes(purpose));
     const others = shown.filter((model) => !model.pick);
     const card = (model) => (
         <CatalogueCard
@@ -474,7 +475,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                 </Typography>
             )}
 
-            {catalogue.models.length > 0 && catalogue.models.every((model) => !model.pick) && (
+            {catalogue.models.length > 0 && (catalogue.picks || []).length === 0 && (
                 <Typography size="xs" color="muted">
                     None of the listed models is a comfortable fit for this device. Smaller ones may still run slowly.
                 </Typography>
@@ -487,9 +488,9 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
                 </>
             )}
 
-            {catalogue.total > PAGE_SIZES[0] && (
+            {paged > PAGE_SIZES[0] && (
                 <Pagination size="sm" padding="none" page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} pageSize={size} pageSizes={PAGE_SIZES} onPageSize={(chosen) => turn(1, chosen)}>
-                    <Typography size="xs" color="muted">per page · {catalogue.total} models</Typography>
+                    <Typography size="xs" color="muted">per page · {paged} models, not counting the recommended ones</Typography>
                 </Pagination>
             )}
 
@@ -873,9 +874,11 @@ const ModelsPage = () => {
     const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, size = perPage(), all = false } = {}) => {
         setCatalogueLoading(true);
         try {
-            const result = await modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(all ? {} : { size }), ...(all ? { all: true } : {}) });
-            result.size = result.size || size;
-            setCatalogue(result);
+            const ask = (withSize) => modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(withSize && !all ? { size } : {}), ...(all ? { all: true } : {}) });
+            // A server a little behind this page may not know the chosen number per page yet; it is then asked plainly.
+            const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false) : Promise.reject(error)));
+            result.size = result.size || 48;
+            setCatalogue((now) => ({ ...result, picks: page === 1 ? result.models.filter((model) => model.pick) : (now?.picks || []) }));
         } catch (error) {
             notifyError(describeError(error, 'The model list could not be loaded.'));
             setCatalogue((now) => (page > 1 && now ? now : { models: [], unavailable: true, query: q, page: 1, more: false }));
