@@ -950,8 +950,21 @@ const STEP_FAILURES = {
     limited: 'the search service is limiting requests right now. Wait a few minutes, or check the monthly allowance of the search key.',
     unreachable: 'the web could not be reached.'
 };
+const TOOL_FAILURES = {
+    failed: 'it reported a problem.',
+    refused: 'you did not allow it.',
+    offline: 'that computer is not connected.',
+    limited: 'the hourly limit on tool use was reached.',
+    blocked: 'only public https addresses can be reached.',
+    unreachable: 'it could not be reached.'
+};
+const isSearchStep = (step) => step.tool === 'web_search' || step.tool === 'web_fetch';
 // A step still under way reads as something happening now; a finished one as something done.
 const stepText = (step, active = false) => {
+    if (!isSearchStep(step)) {
+        if (step.failed) return `Could not use ${step.tool}: ${TOOL_FAILURES[step.failed] || TOOL_FAILURES.unreachable}`;
+        return active ? `Using ${step.tool}…` : `Used ${step.tool}`;
+    }
     const what = step.tool === 'web_fetch' ? `read ${hostOf(step.input)}` : `search the web for “${step.input}”`;
     if (step.failed) return `Could not ${what}: ${STEP_FAILURES[step.failed] || STEP_FAILURES.unreachable}`;
     if (active) return step.tool === 'web_fetch' ? `Reading ${hostOf(step.input)}…` : `Searching the web for “${step.input}”…`;
@@ -962,8 +975,10 @@ const Steps = ({ steps, live = false }) => (
     <Container layout="flex-column" gap="none" padding="none" marginBottom="xs">
         {steps.map((step, index) => (
             <Container key={index} layout="flex" wrap={false} align="center" gap="xs" padding="none">
-                <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
-                {step.failed
+                <Icon name={step.failed ? 'FiAlertTriangle' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
+                {!isSearchStep(step)
+                    ? <Typography size="xxs" color={step.failed ? 'error' : 'muted'} truncate title={`What was sent: ${step.input}`}>{stepText(step, live && index === steps.length - 1)}</Typography>
+                    : step.failed
                     ? <Typography size="xxs" color="error">{stepText(step, live && index === steps.length - 1)}</Typography>
                     : step.tool === 'web_fetch'
                     ? <Typography size="xxs" color="muted" href={/^https?:/i.test(step.input) ? step.input : undefined} target="_blank" rel="noreferrer noopener" truncate>{stepText(step, live && index === steps.length - 1)}</Typography>
@@ -1203,7 +1218,7 @@ const Centered = ({ gap = 'sm', children }) => (
     </Container>
 );
 
-const emptySetup = { instructions: [], skills: null, temperature: '', num_ctx: '' };
+const emptySetup = { instructions: [], skills: null, tools: [], temperature: '', num_ctx: '' };
 
 const ChatPage = () => {
     const { id: routeId } = useParams();
@@ -1238,6 +1253,7 @@ const ChatPage = () => {
     const [webSearch, setWebSearch] = useState(false);
     const [draftSearch, setDraftSearch] = useState(true);
     const [skills, setSkills] = useState([]);
+    const [tools, setTools] = useState([]);
     const [text, setText] = useState(() => {
         try {
             return sessionStorage.getItem('mollama-first-prompt') || '';
@@ -1383,6 +1399,7 @@ const ChatPage = () => {
         setDraftSetup({
             instructions: chat.instructions || [],
             skills: chat.skills || null,
+            tools: chat.tools || [],
             temperature: chat.options?.temperature ?? '',
             num_ctx: chat.options?.num_ctx ?? ''
         });
@@ -1455,6 +1472,7 @@ const ChatPage = () => {
         // Whether the server can search does not depend on any computer, so it is read here and not with the model list.
         chatService.skills().then((result) => {
             setSkills(result.skills || []);
+            setTools(result.tools || []);
             setWebSearch(Boolean(result.webSearch));
         }).catch(() => setSkills([]));
     }, []);
@@ -1466,11 +1484,16 @@ const ChatPage = () => {
         const instructions = setup.instructions
             .filter((item) => item.text.trim())
             .map((item, index) => ({ name: item.name.trim() || `Instruction ${index + 1}`, text: item.text, source: item.source || 'ai-base', path: item.path || null }));
-        return { instructions, options, skills: setup.skills };
+        return { instructions, options, skills: setup.skills, tools: setup.tools || [] };
     };
 
     // With nothing chosen, a chat uses the skills that are on by default.
     const activeSkills = draftSetup.skills || skills.filter((skill) => skill.default).map((skill) => skill.id);
+    const activeTools = draftSetup.tools || [];
+    const toggleTool = (id) => setDraftSetup((now) => ({ ...now, tools: activeTools.includes(id) ? activeTools.filter((other) => other !== id) : [...activeTools, id] }));
+    // Only a model marked as able to use tools is offered them; one whose abilities are not known yet is given the benefit of the doubt.
+    const modelAbilities = models.find((model) => model.name === currentModel)?.capabilities;
+    const modelUsesTools = !modelAbilities || modelAbilities.includes('tools');
     const toggleSkill = (id) => setDraftSetup((now) => ({
         ...now,
         skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id]
@@ -1509,6 +1532,8 @@ const ChatPage = () => {
         if (event.type === 'token') setLive((now) => now && { ...now, content: now.content + event.text });
         if (event.type === 'replace') setLive((now) => now && { ...now, content: event.text });
         if (event.type === 'tool') setLive((now) => now && { ...now, steps: [...(now.steps || []), { tool: event.tool, input: event.input }] });
+        if (event.type === 'permission') setLive((now) => now && { ...now, permission: { id: event.id, tool: event.tool, input: event.input } });
+        if (event.type === 'toolFailed' || event.type === 'token') setLive((now) => (now?.permission ? { ...now, permission: null } : now));
         if (event.type === 'toolFailed') setLive((now) => now && { ...now, steps: (now.steps || []).map((step, index, all) => (index === all.length - 1 ? { ...step, failed: event.failed } : step)) });
     };
 
@@ -2131,6 +2156,24 @@ const ChatPage = () => {
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
                                 {live.steps?.length > 0 && <Steps steps={live.steps} live />}
+                                {live.permission && (
+                                    <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false} borderColor="primary">
+                                        <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
+                                            <Icon name="FiShield" size="xs" color="warning" />
+                                            <Typography size="xs" weight="semibold">{live.permission.tool} can change things. Allow it to run?</Typography>
+                                        </Container>
+                                        <Typography size="xxs" color="muted" font="monospace">{live.permission.input}</Typography>
+                                        <ButtonGroup size="xs" spaced selectable={false} justify="start">
+                                            {[['once', 'Allow once', 'primary'], ['always', 'Always in this chat', 'secondary'], ['no', 'Refuse', 'error']].map(([answer, label, color]) => (
+                                                <Button key={answer} size="xs" color={color} onClick={() => {
+                                                    const question = live.permission.id;
+                                                    setLive((now) => now && { ...now, permission: null });
+                                                    chatService.answerPermission(chat.id, question, answer).catch(() => {});
+                                                }}>{label}</Button>
+                                            ))}
+                                        </ButtonGroup>
+                                    </Card>
+                                )}
                                 {live.thinking && <Thinking text={live.thinking} startOpen />}
                                 {live.content
                                     ? <BlockContext.Provider value={LIVE_BLOCKS}><Markdown text={live.content} /></BlockContext.Provider>
@@ -2314,6 +2357,27 @@ const ChatPage = () => {
                             What the model should know or follow in this chat. Add as many pieces as you need: typed text, files, or ones you saved earlier.
                         </Typography>
                         {working && <Typography size="xs" color="muted">{working}</Typography>}
+                        {tools.length > 0 && (
+                            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                                <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                                    <Typography size="xs" weight="semibold">Tools</Typography>
+                                    <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}>Manage tools</Button>
+                                </Container>
+                                {!modelUsesTools && <Typography size="xxs" color="muted">This model cannot use tools. Pick one marked &quot;Can use tools&quot; on the Models page.</Typography>}
+                                {tools.map((tool) => (
+                                    <Container key={tool.id} layout="flex" wrap={false} align="center" justify="between" gap="sm" padding="none" width="100%">
+                                        <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
+                                            <Typography size="xs">{tool.name}</Typography>
+                                            <Typography size="xxs" color="muted">
+                                                {tool.kind === 'builtin' ? tool.description : tool.ready ? `${tool.count === 1 ? '1 tool' : `${tool.count} tools`} · ${tool.kind === 'local' ? 'on your computer' : 'online'}` : `${tool.state}. Open Manage tools to see what it needs.`}
+                                            </Typography>
+                                        </Container>
+                                        <Switch size="sm" checked={activeTools.includes(tool.id)} disabled={!modelUsesTools || !tool.ready} onChange={() => toggleTool(tool.id)} aria-label={tool.name} />
+                                    </Container>
+                                ))}
+                                <Divider margin="xs" />
+                            </Container>
+                        )}
                         {skills.length > 0 && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
                                 <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
