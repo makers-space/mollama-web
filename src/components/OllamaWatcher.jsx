@@ -19,12 +19,8 @@ export const OllamaWatcher = () => {
         try {
             const status = await deviceService.getSetupStatus();
             const account = status.account || status.ollama;
+            // Only reports; the computer a person picked is never changed from here.
             found = account?.available ? null : account;
-            // The computer in use cannot run models but another can, so the app moves to that one.
-            if (!status.ollama?.available && status.ready && deviceService.chosen() !== status.ready) {
-                deviceService.choose(status.ready);
-                window.dispatchEvent(new CustomEvent('ollama-availability-changed'));
-            }
         } catch (error) {
             const data = error?.response?.data;
             if (data?.code === 'DATABASE_DOWN') {

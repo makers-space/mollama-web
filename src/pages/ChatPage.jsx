@@ -1335,13 +1335,15 @@ const ChatPage = () => {
             .then((result) => {
                 setDevices(result.devices);
                 pickerMemory.keepDevices(result.devices, result.current);
-                const preferred = preferDevice(result.devices, result.current);
-                // A remembered choice is kept while that computer can still be used; otherwise the best one takes its place.
-                setDraftDevice((now) => (now && result.devices.some((device) => device.id === now && device.online && !device.paused) ? now : preferred));
+                // The person's pick stays, even while that computer is offline for a moment; one is chosen only when there is
+                // none yet or the picked one has left the account.
+                setDraftDevice((now) => (now && result.devices.some((device) => device.id === now) ? now : preferDevice(result.devices, result.current)));
                 // The other computers' models are fetched quietly, so switching to one shows its models at once.
                 result.devices
                     .filter((device) => deviceService.ready(device))
-                    .forEach((device) => modelService.installedOn(device.id).then((answer) => pickerMemory.keepModels(device.id, answer.models)).catch(() => {}));
+                    .forEach((device) => modelService.installedOn(device.id).then((answer) => {
+                        if (answer.ollamaAvailable !== false) pickerMemory.keepModels(device.id, answer.models);
+                    }).catch(() => {}));
             })
             .catch(() => {});
     }, []);
@@ -1363,6 +1365,8 @@ const ChatPage = () => {
         setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: Boolean(kept) });
         try {
             const result = await modelService.installedOn(currentDevice);
+            // Ollama on that computer did not answer: what was last seen there stays, and the picker says so.
+            if (result.ollamaAvailable === false) throw new Error('unreachable');
             pickerMemory.keepModels(currentDevice, result.models);
             if (ask !== modelsAsk.current) return;
             setModelState({ device: currentDevice, fresh: true, list: result.models.filter((model) => model.canChat !== false), loaded: true, others: result.models.filter((model) => model.canChat === false).map((model) => model.displayName || model.name), failed: false });
@@ -1372,6 +1376,13 @@ const ChatPage = () => {
             setModelState({ device: currentDevice, list: keptModels(currentDevice), loaded: true, others: [], failed: true });
         }
     }, [currentDevice]);
+
+    // A list that could not be read is asked for again a little later, while the page stays on that computer.
+    useEffect(() => {
+        if (!modelState.failed || modelState.device !== currentDevice) return undefined;
+        const timer = setTimeout(loadModels, 5000);
+        return () => clearTimeout(timer);
+    }, [modelState, currentDevice, loadModels]);
 
     useEffect(() => {
         loadModels();
@@ -2315,7 +2326,7 @@ const ChatPage = () => {
                                         {models.length === 0 && (
                                             <Typography size="xs" color="muted">
                                                 {!modelsLoaded ? 'Loading the models on this computer…'
-                                                    : modelState.device === currentDevice && modelState.failed ? 'The models on this computer could not be read just now. Try again in a moment.'
+                                                    : modelState.device === currentDevice && modelState.failed ? 'Ollama on this computer did not answer just now. Trying again…'
                                                     : modelState.device === currentDevice && modelState.others?.length ? `The models here cannot chat: ${modelState.others.join(', ')}. Download a chat model on the Models page.`
                                                     : 'No model is installed yet.'}
                                             </Typography>
