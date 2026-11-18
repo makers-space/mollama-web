@@ -193,6 +193,7 @@ export const providerService = {
 export const skillService = {
     list: () => api.get('/skills'),
     read: (id) => api.get(`/skills/${id}`),
+    file: (id, path) => api.get(`/skills/${id}/file`, { params: { path } }),
     add: (address) => api.post('/skills', { address }),
     remove: (id) => api.delete(`/skills/${id}`)
 };

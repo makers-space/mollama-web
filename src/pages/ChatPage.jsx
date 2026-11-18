@@ -7,12 +7,12 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import {
     Page, Container, Card, Typography, Button, ButtonGroup, FloatingActionButton, Badge, Divider, Input, Select, Switch, Icon, Genie,
-    ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor
+    ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor, Frame
 } from '@components/Components';
 import { parseFlow } from '@components/Flow';
 import { useNotification } from '@contexts/NotificationContext';
 import { useAuth } from '@contexts/AuthContext';
-import { chatService, deviceService, fileService, modelService, promptService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
+import { chatService, deviceService, fileService, modelService, promptService, skillService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
 import { appService } from '../client/app.client';
 
 const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'primary' };
@@ -183,7 +183,8 @@ const BLOCK_SPEC = {
     Editor: { props: ['content', 'src', 'mode', 'language'] },
     Input: { props: ['label', 'placeholder', 'multiline', 'rows'] },
     Select: { props: ['label', 'placeholder', 'options'] },
-    Switch: { props: ['label', 'defaultChecked'] }
+    Switch: { props: ['label', 'defaultChecked'] },
+    Frame: { props: ['content', 'template', 'height', 'title'] }
 };
 const NODE_KEYS = ['component', 'props', 'children'];
 const FLOW_ARRANGE = ['lr', 'tb', 'grid', 'circle'];
@@ -218,6 +219,7 @@ const checkNode = (node, parent = null) => {
     const webSource = isText(props.src) && String(props.src).trim() !== '';
     if (webSource && ['Model3D', 'Editor', 'Data', 'PdfViewer', 'Video', 'Audio'].includes(name) && !isRemote(props.src)) return `${name}: src must be an https address.`;
     const hasContent = typeof props.content === 'string' && props.content.trim() !== '';
+    if (name === 'Frame' && !hasContent && !(isText(props.template) && String(props.template).includes('/'))) return 'Frame needs a page between its tags, or a template written as skill/file.';
     if (name === 'Model3D' && !webSource && !hasContent) return 'Model3D needs src, or the text of an OBJ or STL file between its tags.';
     if (name === 'Model3D' && webSource && !MODEL_FORMATS.includes(String(props.format || extensionOf(props.src)).toLowerCase())) return `Model3D can show these file types: ${MODEL_FORMATS.join(', ')}.`;
     if (name === 'Editor' && !webSource && !hasContent) return 'Editor needs src, or its text between its tags.';
@@ -317,6 +319,50 @@ const LocalField = ({ Component, ...props }) => {
 const LocalSwitch = ({ defaultChecked, ...props }) => {
     const [on, setOn] = useState(defaultChecked === true);
     return <Switch {...props} checked={on} onChange={(next) => setOn(typeof next === 'boolean' ? next : Boolean(next?.target?.checked))} />;
+};
+
+// A page written in a reply, shown in a sealed frame. With a template, the template is one of a skill's files, and
+// each /*NAME*/ marker in it is filled by the Part of that name: another of the skill's files, or the text inside the
+// Part. Nothing is drawn while the reply is still being written, so the page is built once, from the whole of it.
+const FRAME_PART = /<Part\b([^>]*?)(?:\/>|>([\s\S]*?)<\/Part\s*>)/gi;
+const skillFiles = new Map();
+const loadSkillFile = (address) => {
+    const [skill, ...rest] = String(address).trim().split('/');
+    const key = `${skill}/${rest.join('/')}`;
+    if (!skillFiles.has(key)) {
+        const request = skillService.file(skill, rest.join('/')).then((result) => result.text);
+        skillFiles.set(key, request);
+        request.catch(() => skillFiles.delete(key));
+    }
+    return skillFiles.get(key);
+};
+const buildFrame = async (content, template) => {
+    if (!isText(template) || !String(template).trim()) return String(content ?? '');
+    let page = await loadSkillFile(template);
+    for (const match of String(content ?? '').matchAll(FRAME_PART)) {
+        const part = readAttributes(match[1].replace(/\/\s*$/, ''));
+        if (!isText(part.name)) continue;
+        const fill = isText(part.file) ? await loadSkillFile(part.file) : String(match[2] ?? '').replace(/^\s*\n/, '').replace(/\s+$/, '');
+        page = page.replace(`/*${part.name}*/`, () => `\n${fill}\n`);
+    }
+    return page;
+};
+const ChatFrame = ({ content, template, height, title, live }) => {
+    const [state, setState] = useState({ loading: true });
+    useEffect(() => {
+        if (live) return undefined;
+        let current = true;
+        setState({ loading: true });
+        buildFrame(content, template).then(
+            (html) => { if (current) setState({ html }); },
+            () => { if (current) setState({ problem: 'A file this page is built from could not be loaded.' }); }
+        );
+        return () => { current = false; };
+    }, [content, template, live]);
+    if (live) return <Typography size="xs" color="muted">Building the page…</Typography>;
+    if (state.problem) return <Typography size="xxs" color="warning">[Not drawn: {state.problem}]</Typography>;
+    if (state.loading) return <CircularProgress size="sm" />;
+    return <Frame html={state.html} height={isText(height) ? String(height) : '520px'} title={isText(title) ? String(title) : 'Page'} />;
 };
 
 const MODEL_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', 'ply', 'dae', '3mf', 'vox', '3ds'];
@@ -685,6 +731,7 @@ const renderBlock = (node, context, key, parent = null) => {
         return <WebFile key={key} address={src} kind="blob">{(blob) => <BlobAddress blob={blob}>{(url) => <Model3D src={url} format={kind} height="360px" {...rest} />}</BlobAddress>}</WebFile>;
     }
     if (name === 'Model3D') return <InlineModel key={key} {...props} />;
+    if (name === 'Frame') return <ChatFrame key={key} live={context.live} {...props} />;
     if (name === 'PdfViewer') {
         return <WebFile key={key} address={props.src} kind="blob">{(blob) => <PdfViewer blob={blob} readOnly compact height="70vh" />}</WebFile>;
     }
@@ -731,12 +778,12 @@ class BlockBoundary extends React.Component {
     }
 }
 
-const RAW_TAGS = ['Model3D', 'Editor', 'Image', 'Flow'];
+const RAW_TAGS = ['Model3D', 'Editor', 'Image', 'Flow', 'Frame'];
 const TEXT_TAGS = ['Typography', 'Badge', 'Button'];
 const NUMBER_PROPS = ['value', 'max', 'columns', 'rows'];
 const TAG_NAMES = [
     'Container', 'Card', 'Divider', 'Typography', 'Badge', 'Icon', 'Button', 'ButtonGroup', 'FloatingActionButton', 'ProgressBar', 'CircularProgress',
-    'Data', 'Flow', 'TreeView', 'Image', 'Video', 'Audio', 'PdfViewer', 'Model3D', 'Editor', 'Input', 'Select', 'Switch',
+    'Data', 'Flow', 'TreeView', 'Image', 'Video', 'Audio', 'PdfViewer', 'Model3D', 'Editor', 'Input', 'Select', 'Switch', 'Frame',
     'Row', 'Column', 'Node', 'Edge', 'Item', 'Option'
 ];
 const EXACT_TAG = new Map(TAG_NAMES.map((name) => [name.toLowerCase(), name]));
@@ -844,6 +891,7 @@ const toNode = (element) => {
         const options = elements(children, 'Option').map((option) => ({ value: option.props.value ?? option.props.label, label: option.props.label ?? textOfMarkup(option.children) }));
         return { component: 'Select', props: { ...props, options } };
     }
+    if (tag === 'Frame') return { component: 'Frame', props: { ...props, content: rawText(children) } };
     if (tag === 'Model3D' || tag === 'Editor') return { component: tag, props: { ...props, content: props.content ?? rawText(children) } };
     if (tag === 'Image') {
         const inner = rawText(children);
@@ -867,7 +915,7 @@ const readComponents = (source) => readMarkup(source)
 // A model sometimes writes its components without the fence that marks them, or in a fence with another name. Both are
 // still drawn. Any component that may stand on its own starts a block; the block ends where that component closes, so
 // the writing after it stays ordinary text.
-const TOP_TAGS = 'Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|FloatingActionButton|ProgressBar|CircularProgress|Typography|Badge|Image|Video|Audio|PdfViewer|Editor|Input|Select|Switch';
+const TOP_TAGS = 'Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|FloatingActionButton|ProgressBar|CircularProgress|Typography|Badge|Image|Video|Audio|PdfViewer|Editor|Input|Select|Switch|Frame';
 const BARE_START = new RegExp(`^[ \\t]*<(${TOP_TAGS})[\\s>/]`, 'm');
 const TAG_START = new RegExp(`^\\s*<(${TOP_TAGS})[\\s>/]`);
 const endOfTag = (text, from) => {
@@ -1004,6 +1052,7 @@ const stepText = (step, active = false) => {
         if (step.failed) return `Could not find a component called “${step.input}”`;
         return active ? `Reading how to draw ${step.input}…` : `Read how to draw ${step.input}`;
     }
+    if (step.tool === 'Skill file') return active ? `Reading ${step.input}…` : `Read ${step.input}`;
     if (step.tool === 'Skill library') return active ? `Looking in the skill library for “${step.input}”…` : `Looked in the skill library for “${step.input}”`;
     if (!isSearchStep(step)) {
         if (step.failed) return `Could not use ${step.tool}: ${TOOL_FAILURES[step.failed] || TOOL_FAILURES.unreachable}`;
@@ -1019,7 +1068,7 @@ const Steps = ({ steps, live = false }) => (
     <Container layout="flex-column" gap="none" padding="none" marginBottom="xs">
         {steps.map((step, index) => (
             <Container key={index} layout="flex" wrap={false} align="center" gap="xs" padding="none">
-                <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'Skill' || step.tool === 'Skill library' ? 'FiZap' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
+                <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'Skill' || step.tool === 'Skill library' || step.tool === 'Skill file' ? 'FiZap' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
                 {!isSearchStep(step)
                     ? <Typography size="xxs" color={step.failed ? 'error' : 'muted'} truncate title={`What was sent: ${step.input}`}>{stepText(step, live && index === steps.length - 1)}</Typography>
                     : step.failed
