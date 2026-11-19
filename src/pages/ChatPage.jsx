@@ -7,7 +7,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import {
     Page, Container, Card, Typography, Button, ButtonGroup, FloatingActionButton, Badge, Divider, Input, Select, Switch, Icon, Genie,
-    ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor, Frame
+    ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Slides, Sheet, Model3D, Editor, Frame
 } from '@components/Components';
 import { parseFlow } from '@components/Flow';
 import { useNotification } from '@contexts/NotificationContext';
@@ -149,9 +149,9 @@ const BlockContext = React.createContext({ send: null, live: false });
 
 const BLOCK_COMPONENTS = {
     Container, Card, Typography, Button, ButtonGroup, FloatingActionButton, Badge, Divider, Icon, ProgressBar, CircularProgress,
-    Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Model3D, Editor, Input, Select, Switch
+    Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Slides, Sheet, Model3D, Editor, Input, Select, Switch
 };
-const MEDIA = { Image: 'image', Video: 'video', Audio: 'audio', PdfViewer: 'PDF', Model3D: '3D model' };
+const MEDIA = { Image: 'image', Video: 'video', Audio: 'audio', PdfViewer: 'PDF', Slides: 'slide deck', Sheet: 'sheet', Model3D: '3D model' };
 const isRemote = (value) => /^https?:\/\//i.test(String(value || ''));
 const safeLink = (value) => (/^(https?:|mailto:)/i.test(String(value || '')) ? value : null);
 const safeSource = (value) => (/^(https?:\/\/|data:(image|audio|video|model|application\/pdf))/i.test(String(value || '')) ? value : null);
@@ -179,6 +179,8 @@ const BLOCK_SPEC = {
     Video: { props: ['src', 'title'], required: ['src'] },
     Audio: { props: ['src', 'title'], required: ['src'] },
     PdfViewer: { props: ['src'], required: ['src'] },
+    Slides: { props: ['src', 'height'], required: ['src'] },
+    Sheet: { props: ['src', 'height'], required: ['src'] },
     Model3D: { props: ['content', 'src', 'format', 'fileName', 'autoRotate', 'height'] },
     Editor: { props: ['content', 'src', 'mode', 'language'] },
     Input: { props: ['label', 'placeholder', 'multiline', 'rows'] },
@@ -217,7 +219,7 @@ const checkNode = (node, parent = null) => {
     if (name === 'FloatingActionButton' && parent !== 'Card') return 'FloatingActionButton must be placed directly inside a Card.';
     if (name === 'Image' && !props.src && !props.content) return 'Image needs "src" or "content".';
     const webSource = isText(props.src) && String(props.src).trim() !== '';
-    if (webSource && ['Model3D', 'Editor', 'Data', 'PdfViewer', 'Video', 'Audio'].includes(name) && !isRemote(props.src)) return `${name}: src must be an https address.`;
+    if (webSource && ['Model3D', 'Editor', 'Data', 'PdfViewer', 'Slides', 'Sheet', 'Video', 'Audio'].includes(name) && !isRemote(props.src)) return `${name}: src must be an https address.`;
     const hasContent = typeof props.content === 'string' && props.content.trim() !== '';
     if (name === 'Frame' && !hasContent && !(isText(props.template) && String(props.template).includes('/'))) return 'Frame needs a page between its tags, or a template written as skill/file.';
     if (name === 'Model3D' && !webSource && !hasContent) return 'Model3D needs src, or the text of an OBJ or STL file between its tags.';
@@ -749,6 +751,11 @@ const renderBlock = (node, context, key, parent = null) => {
     if (name === 'PdfViewer') {
         return <WebFile key={key} address={props.src} kind="blob">{(blob) => <PdfViewer blob={blob} readOnly compact height="70vh" />}</WebFile>;
     }
+    if (name === 'Slides' || name === 'Sheet') {
+        const View = name === 'Slides' ? Slides : Sheet;
+        const fileName = decodeURIComponent(String(props.src).split(/[?#]/)[0].split('/').pop() || '') || (name === 'Slides' ? 'slides.pptx' : 'sheet.xlsx');
+        return <WebFile key={key} address={props.src} kind="blob">{(blob) => <View blob={blob} fileName={fileName} compact height={isText(props.height) ? String(props.height) : name === 'Slides' ? '60vh' : '420px'} />}</WebFile>;
+    }
 
     const { content, src, ...rest } = props;
     const source = name === 'Image' && typeof content === 'string' && /<svg[\s>]/i.test(content)
@@ -797,7 +804,7 @@ const TEXT_TAGS = ['Typography', 'Badge', 'Button'];
 const NUMBER_PROPS = ['value', 'max', 'columns', 'rows'];
 const TAG_NAMES = [
     'Container', 'Card', 'Divider', 'Typography', 'Badge', 'Icon', 'Button', 'ButtonGroup', 'FloatingActionButton', 'ProgressBar', 'CircularProgress',
-    'Data', 'Flow', 'TreeView', 'Image', 'Video', 'Audio', 'PdfViewer', 'Model3D', 'Editor', 'Input', 'Select', 'Switch', 'Frame',
+    'Data', 'Flow', 'TreeView', 'Image', 'Video', 'Audio', 'PdfViewer', 'Slides', 'Sheet', 'Model3D', 'Editor', 'Input', 'Select', 'Switch', 'Frame',
     'Row', 'Column', 'Node', 'Edge', 'Item', 'Option'
 ];
 const EXACT_TAG = new Map(TAG_NAMES.map((name) => [name.toLowerCase(), name]));
@@ -929,7 +936,7 @@ const readComponents = (source) => readMarkup(source)
 // A model sometimes writes its components without the fence that marks them, or in a fence with another name. Both are
 // still drawn. Any component that may stand on its own starts a block; the block ends where that component closes, so
 // the writing after it stays ordinary text.
-const TOP_TAGS = 'Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|FloatingActionButton|ProgressBar|CircularProgress|Typography|Badge|Image|Video|Audio|PdfViewer|Editor|Input|Select|Switch|Frame';
+const TOP_TAGS = 'Card|Container|Data|Flow|TreeView|Model3D|ButtonGroup|Button|FloatingActionButton|ProgressBar|CircularProgress|Typography|Badge|Image|Video|Audio|PdfViewer|Slides|Sheet|Editor|Input|Select|Switch|Frame';
 const BARE_START = new RegExp(`^[ \\t]*<(${TOP_TAGS})[\\s>/]`, 'm');
 const TAG_START = new RegExp(`^\\s*<(${TOP_TAGS})[\\s>/]`);
 const endOfTag = (text, from) => {
