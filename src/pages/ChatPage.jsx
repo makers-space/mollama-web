@@ -2605,7 +2605,7 @@ const ChatPage = () => {
                             <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
                                 <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
                                     <Typography size="xs" truncate>{skill.name}</Typography>
-                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Written for an agent that can run commands or open files. Its guidance works here; the steps that need those do not yet.">Guidance only</Badge>}
+                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Its guidance works here. Some of its steps need commands or files that Mollama does not have yet.">Guidance only</Badge>}
                                     {skill.tokens > 4000 && <Badge size="xxs" color="warning" title="A long skill. A small model may not have room for it and its conversation, and may ignore it.">Large</Badge>}
                                     <Typography size="xxs" color="muted">{`${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`}</Typography>
                                 </Container>

@@ -89,7 +89,11 @@ const ServerCard = ({ server, icon, where, busy, onCheck, onSignIn, onRemove }) 
 };
 
 const tokensOf = (skill) => `${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`;
-const PARTLY = 'Written for an agent that can run commands or open files. Its guidance works in a chat; the steps that need those do not yet.';
+const LACKS = {
+    commands: 'It tells the model to run commands, and Mollama has no function yet that does what they do.',
+    files: 'It refers to files of its own that are not in Mollama yet.'
+};
+const partly = (skill) => `Its guidance works in a chat. ${(skill.needs || []).map((need) => LACKS[need]).filter(Boolean).join(' ')}`;
 
 const SkillCard = ({ skill, onView, children }) => (
     <Card padding="sm" width="100%" minWidth="0" hover={false}>
@@ -100,7 +104,7 @@ const SkillCard = ({ skill, onView, children }) => (
             </Container>
             <Typography size="xxs" color="muted" truncate title={skill.description}>{skill.description || 'No description.'}</Typography>
             <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
-                {skill.needs?.length > 0 ? <Badge size="xxs" color="warning" title={PARTLY}>Guidance only</Badge> : <Container padding="none" />}
+                {skill.needs?.length > 0 ? <Badge size="xxs" color="warning" title={partly(skill)}>Guidance only</Badge> : <Container padding="none" />}
                 <ButtonGroup size="xxs" selectable={false} wrap={false} justify="end">
                     <Button size="xxs" variant="ghost" onClick={(event) => onView(skill, event.currentTarget)}>View</Button>
                     {children}
@@ -260,7 +264,7 @@ const SkillsView = () => {
                         </Container>
                         {open.description && <Typography size="xs" color="muted">{open.description}</Typography>}
                         {open.credit && <Typography size="xxs" color="muted">{`From ${open.credit}`}</Typography>}
-                        {open.needs?.length > 0 && <Typography size="xxs" color="warning">{PARTLY}</Typography>}
+                        {open.needs?.length > 0 && <Typography size="xxs" color="warning">{partly(open)}</Typography>}
                         <Divider margin="xs" />
                         {open.text === null
                             ? <Typography size="xs" color="muted">Reading the skill…</Typography>
