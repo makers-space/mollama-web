@@ -376,7 +376,7 @@ const ChatFrame = ({ content, template, height, title, palette, live }) => {
     if (live) return <Typography size="xs" color="muted">Building the page…</Typography>;
     if (state.problem) return <Typography size="xxs" color="warning">[Not drawn: {state.problem}]</Typography>;
     if (state.loading) return <CircularProgress size="sm" />;
-    return <Frame html={state.html} height={isText(height) ? String(height) : '520px'} title={isText(title) ? String(title) : 'Page'} variables={variables} />;
+    return <Frame html={state.html} height={isText(height) ? String(height) : '520px'} title={isText(title) ? String(title) : 'Page'} variables={variables} fit />;
 };
 
 const MODEL_FORMATS = ['glb', 'gltf', 'obj', 'stl', 'fbx', 'ply', 'dae', '3mf', 'vox', '3ds'];
