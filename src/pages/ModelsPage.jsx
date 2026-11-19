@@ -382,6 +382,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
 };
 
 const PAGE_SIZES = [4, 8, 12, 24, 48];
+const EVERYTHING = { q: '', purpose: 'all', can: [], fits: false };
 const SORTS = [
     { value: 'fit', label: 'Best fit for this computer' },
     { value: 'largest', label: 'Needs the most memory first' },
@@ -401,12 +402,11 @@ const perPage = () => {
     const kept = Number(localStorage.getItem('mollama-models-per-page'));
     return PAGE_SIZES.includes(kept) ? kept : 12;
 };
-const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearch, onPage, onSort, loading }) => {
+const DiscoverTab = ({ catalogue, find, jobs, canManage, ollamaUp, onDownload, onFind, onPage, onSort, loading }) => {
     const top = useRef(null);
-    const [purpose, setPurpose] = useState('all');
     const [customName, setCustomName] = useState('');
-    const [query, setQuery] = useState('');
-    const searched = useRef('');
+    const [query, setQuery] = useState(find.q);
+    const searched = useRef(find.q);
 
     // The list follows what is typed, a moment after the typing stops.
     useEffect(() => {
@@ -414,7 +414,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
         if (wanted === searched.current) return undefined;
         const timer = setTimeout(() => {
             searched.current = wanted;
-            onSearch(wanted);
+            onFind({ q: wanted });
         }, 350);
         return () => clearTimeout(timer);
     }, [query]);
@@ -428,11 +428,22 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
         onPage(next, perPage);
         top.current?.scrollIntoView({ block: 'start' });
     };
+    const narrowed = Boolean(find.q) || find.purpose !== 'all' || find.can.length > 0 || find.fits;
+    const clear = () => {
+        searched.current = '';
+        setQuery('');
+        onFind(EVERYTHING);
+    };
+    const total = catalogue.total ?? 0;
+    const counted = `${total} ${total === 1 ? 'model' : 'models'}`;
+    const summary = [
+        catalogue.near ? `No model is called "${find.q}". The closest ${total === 1 ? 'is' : 'are'} shown: ${counted}` : narrowed ? `${counted} found` : `${counted} to choose from`,
+        !find.fits && catalogue.fitting !== null && catalogue.fitting !== undefined ? `${catalogue.fitting} fit this computer` : null
+    ].filter(Boolean).join(' · ');
 
     const jobFor = (tag) => jobs.find((job) => job.model === tag && job.status !== 'completed' && job.status !== 'cancelled');
-    const shown = catalogue.models.filter((model) => purpose === 'all' || model.goodFor.includes(purpose));
-    const recommended = (catalogue.picks || []).filter((model) => purpose === 'all' || model.goodFor.includes(purpose));
-    const others = shown.filter((model) => !model.pick);
+    const recommended = catalogue.picks || [];
+    const others = catalogue.models.filter((model) => !model.pick);
     const card = (model) => (
         <CatalogueCard
             key={model.tag}
@@ -443,44 +454,48 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
             onDownload={onDownload}
         />
     );
+    const choice = (label, on, change, key = label) => (
+        <Button key={key} size="xs" color={on ? 'primary' : 'secondary'} selected={on} onClick={change}>{label}</Button>
+    );
 
     return (
         <Container ref={top} layout="flex-column" gap="md" padding="none" width="100%">
             <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                <Container layout="flex" gap="xs" padding="none" align="center" width="100%" wrap={false}>
+                <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
                     <Input
                         size="sm"
-                        placeholder="Search every model on ollama.com, for example gemma or coder"
+                        type="search"
+                        placeholder="Search by name, size or ability: gemma, qwen3 30b, vision"
                         value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        onKeyDown={(event) => { if (event.key === 'Enter') { searched.current = query.trim(); onSearch(query.trim()); } }}
-                        width="100%"
+                        maxLength={60}
+                        onChange={(event) => setQuery(event.target.value.slice(0, 60))}
+                        onKeyDown={(event) => { if (event.key === 'Enter') { searched.current = query.trim(); onFind({ q: query.trim() }); } }}
+                        minWidth="220px"
                         flexFill
                     />
-                    <Button size="sm" disabled={loading} onClick={() => { searched.current = query.trim(); onSearch(query.trim()); }}>
-                        <Icon name="FiSearch" size="xs" />Search
-                    </Button>
                     <Container padding="none" width="240px">
-                        <Select size="sm" value={sortChoice()} options={SORTS} disabled={loading} onChange={(chosen) => onSort(String(chosen?.target?.value ?? chosen))} width="100%" />
+                        <Select size="sm" value={sortChoice()} options={SORTS} onChange={(chosen) => onSort(String(chosen?.target?.value ?? chosen))} width="100%" />
                     </Container>
                 </Container>
-            </Container>
-            <Row>
-                <ButtonGroup size="xs" justify="start" wrap={false} selectable={false}>
-                    {PURPOSES.map((option) => (
-                        <Button
-                            key={option.id}
-                            size="xs"
-                            color={purpose === option.id ? 'primary' : 'secondary'}
-                            selected={purpose === option.id}
-                            onClick={() => setPurpose(option.id)}
-                        >
-                            {option.label}
+                <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
+                    <ButtonGroup size="xs" justify="start" wrap={false} selectable={false}>
+                        {PURPOSES.map((option) => choice(option.label, find.purpose === option.id, () => onFind({ purpose: option.id }), option.id))}
+                    </ButtonGroup>
+                    <ButtonGroup size="xs" spaced justify="start" selectable={false}>
+                        {Object.entries(ABILITY_LABELS).map(([ability, label]) => choice(label, find.can.includes(ability), () => onFind({ can: find.can.includes(ability) ? find.can.filter((one) => one !== ability) : [...find.can, ability] })))}
+                        {choice('Fits this computer', find.fits, () => onFind({ fits: !find.fits }))}
+                    </ButtonGroup>
+                </Container>
+                <Row>
+                    <Typography size="xxs" color="muted">{summary}</Typography>
+                    {narrowed && (
+                        <Button size="xs" color="secondary" onClick={clear}>
+                            <Icon name="FiX" size="xs" />Clear
                         </Button>
-                    ))}
-                </ButtonGroup>
+                    )}
+                </Row>
                 {!canManage && <Typography size="xxs" color="muted">Only an admin or owner can download models.</Typography>}
-            </Row>
+            </Container>
 
             {recommended.length > 0 && (
                 <>
@@ -491,7 +506,7 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
 
             {catalogue.models.length === 0 && (
                 <Typography size="xs" color="muted">
-                    {catalogue.unavailable ? 'The list could not be loaded from ollama.com. You can still add a model by its name below.' : 'No model in the ollama.com library matched. Try other words, or add a model by its name below.'}
+                    {catalogue.unavailable ? 'The list could not be loaded from ollama.com. You can still add a model by its name below.' : 'No model in the ollama.com library matched. Try other words or fewer filters, or add a model by its name below.'}
                 </Typography>
             )}
 
@@ -510,8 +525,12 @@ const DiscoverTab = ({ catalogue, jobs, canManage, ollamaUp, onDownload, onSearc
 
             {paged > PAGE_SIZES[0] && (
                 <Container layout="flex-column" gap="xs" padding="none" width="100%">
-                    <Pagination size="sm" padding="none" page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} pageSize={size} pageSizes={PAGE_SIZES} onPageSize={(chosen) => turn(1, chosen)} />
-                    <Typography size="xxs" color="muted">Models per page · page {page} of {pages} · {paged} models</Typography>
+                    <Pagination size="sm" padding="none" page={page} pages={pages} disabled={loading} onPage={(next) => turn(next)} pageSize={size} pageSizes={PAGE_SIZES} onPageSize={(chosen) => turn(1, chosen)}>
+                        <Typography size="xxs" color="muted" margin="none">per page</Typography>
+                    </Pagination>
+                    <Container layout="flex" justify="end" padding="none" width="100%">
+                        <Typography size="xxs" color="muted" margin="none">Page {page} of {pages} · {paged} models</Typography>
+                    </Container>
                 </Container>
             )}
 
@@ -892,20 +911,41 @@ const ModelsPage = () => {
         window.addEventListener('models-open-online', open);
         return () => window.removeEventListener('models-open-online', open);
     }, []);
-    // The list is read live from ollama.com: the first page, a search, or one more page added to what is shown.
-    const loadCatalogue = useCallback(async (deviceId, { q = '', page = 1, size = perPage(), sort = sortChoice(), all = false } = {}) => {
+    // The list is read live from ollama.com. What was searched for and narrowed by is kept, so turning a page,
+    // changing the order or coming back to this tab asks for the same list.
+    const [find, setFind] = useState(EVERYTHING);
+    const finding = useRef(EVERYTHING);
+    const asking = useRef(0);
+    const loadCatalogue = useCallback(async (deviceId, { page = 1, size = perPage(), sort = sortChoice(), all = false, ...changes } = {}) => {
+        const wanted = { ...finding.current, ...changes };
+        finding.current = wanted;
+        setFind(wanted);
+        const { q, purpose, can, fits } = wanted;
+        const mine = ++asking.current;
         setCatalogueLoading(true);
         try {
-            const ask = (withSize) => modelService.getDeviceCatalogue(deviceId, { ...(q ? { q } : {}), ...(page > 1 ? { page } : {}), ...(withSize && !all ? { size } : {}), ...(withSize && sort !== 'fit' ? { sort } : {}), ...(all ? { all: true } : {}) });
-            // A server a little behind this page may not know the chosen number per page yet; it is then asked plainly.
+            const ask = (current) => modelService.getDeviceCatalogue(deviceId, {
+                ...(q ? { q } : {}),
+                ...(page > 1 ? { page } : {}),
+                ...(all ? { all: true } : {}),
+                ...(current && !all ? { size } : {}),
+                ...(current && sort !== 'fit' ? { sort } : {}),
+                ...(current && purpose !== 'all' ? { purpose } : {}),
+                ...(current && can.length > 0 ? { can: can.join(',') } : {}),
+                ...(current && fits ? { fits: true } : {})
+            });
+            // A server a little behind this page may not know every choice yet; it is then asked plainly.
             const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false) : Promise.reject(error)));
+            // An answer overtaken by a newer search is dropped.
+            if (mine !== asking.current) return;
             result.size = result.size || 48;
             setCatalogue((now) => ({ ...result, picks: page === 1 ? result.models.filter((model) => model.pick) : (now?.picks || []) }));
         } catch (error) {
+            if (mine !== asking.current) return;
             notifyError(describeError(error, 'The model list could not be loaded.'));
             setCatalogue((now) => (page > 1 && now ? now : { models: [], unavailable: true, query: q, page: 1, more: false }));
         } finally {
-            setCatalogueLoading(false);
+            if (mine === asking.current) setCatalogueLoading(false);
         }
     }, [notifyError]);
 
@@ -1177,14 +1217,15 @@ const ModelsPage = () => {
                         ollamaUp={ollamaUp}
                         onDownload={download}
                         loading={catalogueLoading}
-                        onSearch={(q) => device && loadCatalogue(device.id, { q })}
+                        find={find}
+                        onFind={(changes) => device && loadCatalogue(device.id, changes)}
                         onSort={(sort) => {
                             try { localStorage.setItem('mollama-models-sort', sort); } catch { /* kept for this visit only */ }
-                            if (device && catalogue) loadCatalogue(device.id, { q: catalogue.query || '', page: 1, sort });
+                            if (device) loadCatalogue(device.id, { sort });
                         }}
                         onPage={(page, size) => {
-                            localStorage.setItem('mollama-models-per-page', String(size));
-                            if (device && catalogue) loadCatalogue(device.id, { q: catalogue.query || '', page, size });
+                            try { localStorage.setItem('mollama-models-per-page', String(size)); } catch { /* kept for this visit only */ }
+                            if (device) loadCatalogue(device.id, { page, size });
                         }}
                     />
                 )}
