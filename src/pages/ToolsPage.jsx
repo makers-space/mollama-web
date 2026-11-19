@@ -93,6 +93,31 @@ const LACKS = {
     commands: 'It tells the model to run commands, and Mollama has no function yet that does what they do.',
     files: 'It refers to files of its own that are not in Mollama yet.'
 };
+// The steps for running a skill on the person's own computer, with nothing of Mollama's in between.
+const PROGRAMS = {
+    python: 'Python 3: https://www.python.org/downloads/',
+    node: 'Node.js, which brings `npm` and `npx`: https://nodejs.org/',
+    uv: 'uv: https://docs.astral.sh/uv/',
+    docker: 'Docker Desktop: https://www.docker.com/products/docker-desktop/',
+    brew: 'Homebrew, on macOS or Linux: https://brew.sh/',
+    git: 'Git: https://git-scm.com/downloads',
+    libreoffice: 'LibreOffice: https://www.libreoffice.org/download/',
+    poppler: 'poppler: https://poppler.freedesktop.org/',
+    shell: 'A Unix shell. macOS and Linux have one; on Windows use Git Bash, which comes with Git, or WSL.'
+};
+const localSteps = (skill) => {
+    const setup = skill.setup;
+    if (!setup) return '';
+    const from = setup.address ? [setup.address] : setup.repos.map((repo) => `https://github.com/${repo}`);
+    const steps = [];
+    if (setup.programs.length > 0) steps.push(`Install what it calls:\n${setup.programs.map((id) => `   - ${PROGRAMS[id]}`).join('\n')}`);
+    if (setup.libraries.length > 0) steps.push(`Install its Python libraries: \`pip install ${setup.libraries.join(' ')}\``);
+    if (setup.install.length > 0) steps.push(`Get the skill with its author's own command, in a terminal:\n${setup.install.map((line) => `   - \`${line}\``).join('\n')}`);
+    else if (from.length > 0) steps.push(`Get the skill's files from ${from.join(' or ')} (the green Code button, then Download ZIP), and unpack them into a folder.`);
+    if (setup.runs) steps.push('Open a terminal in the skill\'s folder. When the model gives you a command, run it there and paste back what it prints.');
+    else steps.push('Nothing needs installing: this skill is instructions only, so it works with any model, including one running on your own computer.');
+    return `**On your own computer**\n\n${steps.map((step, at) => `${at + 1}. ${step}`).join('\n')}`;
+};
 const partly = (skill) => `Its guidance works in a chat. ${(skill.needs || []).map((need) => LACKS[need]).filter(Boolean).join(' ')}`;
 
 const SkillCard = ({ skill, onView, children }) => (
@@ -265,6 +290,7 @@ const SkillsView = () => {
                         {open.description && <Typography size="xs" color="muted">{open.description}</Typography>}
                         {open.credit && <Typography size="xxs" color="muted">{`From ${open.credit}`}</Typography>}
                         {open.needs?.length > 0 && <Typography size="xxs" color="warning">{partly(open)}</Typography>}
+                        {open.setup && <Typography as="div" size="xxs" color="muted"><ReactMarkdown remarkPlugins={[remarkGfm]}>{localSteps(open)}</ReactMarkdown></Typography>}
                         <Divider margin="xs" />
                         {open.text === null
                             ? <Typography size="xs" color="muted">Reading the skill…</Typography>
