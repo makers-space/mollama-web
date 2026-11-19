@@ -384,8 +384,8 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
 const PAGE_SIZES = [4, 8, 12, 24, 48];
 const EVERYTHING = { q: '', purpose: 'all', can: [], fits: false, size: 'any', memory: 'any', params: 'any' };
 // Each range is a band from one figure to the next; the last has no upper end.
-const bands = (name, unit, steps, scale = 1) => [
-    { value: 'any', label: `Any ${name}` },
+const bands = (unit, steps, scale = 1) => [
+    { value: 'any', label: 'Any' },
     ...steps.map((step, index) => ({
         value: `${index === 0 ? 0 : steps[index - 1]}-${step}`,
         label: index === 0 ? `Up to ${step} ${unit}` : `${steps[index - 1]} to ${step} ${unit}`,
@@ -395,9 +395,9 @@ const bands = (name, unit, steps, scale = 1) => [
     { value: `${steps.at(-1)}-`, label: `Over ${steps.at(-1)} ${unit}`, low: steps.at(-1) * scale, high: null }
 ];
 const RANGES = {
-    size: { low: 'minSizeMb', high: 'maxSizeMb', options: bands('download size', 'GB', [2, 5, 10, 20, 40], 1024) },
-    memory: { low: 'minMemoryMb', high: 'maxMemoryMb', options: bands('memory needed', 'GB', [4, 8, 16, 32, 64], 1024) },
-    params: { low: 'minParams', high: 'maxParams', options: bands('model size', 'B', [4, 9, 16, 34, 80]) }
+    size: { title: 'Download size', low: 'minSizeMb', high: 'maxSizeMb', options: bands('GB', [2, 5, 10, 20, 40], 1024) },
+    memory: { title: 'Memory needed', low: 'minMemoryMb', high: 'maxMemoryMb', options: bands('GB', [4, 8, 16, 32, 64], 1024) },
+    params: { title: 'Model size', low: 'minParams', high: 'maxParams', options: bands('B', [4, 9, 16, 34, 80]) }
 };
 const rangeQuery = (find) => Object.entries(RANGES).reduce((query, [key, range]) => {
     const band = range.options.find((option) => option.value === find[key]);
@@ -405,11 +405,11 @@ const rangeQuery = (find) => Object.entries(RANGES).reduce((query, [key, range])
     return { ...query, ...(band.low > 0 ? { [range.low]: band.low } : {}), ...(band.high !== null ? { [range.high]: band.high } : {}) };
 }, {});
 const SORTS = [
-    { value: 'fit', label: 'Best fit for this computer' },
-    { value: 'largest', label: 'Needs the most memory first' },
-    { value: 'smallest', label: 'Needs the least memory first' },
-    { value: 'popular', label: 'Most downloaded first' },
-    { value: 'name', label: 'Name, A to Z' }
+    { value: 'fit', label: 'Best fit for this computer', short: 'Best fit' },
+    { value: 'largest', label: 'Needs the most memory first', short: 'Most memory' },
+    { value: 'smallest', label: 'Needs the least memory first', short: 'Least memory' },
+    { value: 'popular', label: 'Most downloaded first', short: 'Most downloaded' },
+    { value: 'name', label: 'Name, A to Z', short: 'Name' }
 ];
 const sortChoice = () => {
     try {
@@ -478,6 +478,37 @@ const DiscoverTab = ({ catalogue, find, jobs, canManage, ollamaUp, onDownload, o
     const choice = (label, on, change, key = label) => (
         <Button key={key} size="xs" color={on ? 'primary' : 'secondary'} selected={on} onClick={change}>{label}</Button>
     );
+    // Every filter in force, each with the way to take it off.
+    const active = [
+        find.purpose !== 'all' ? { label: PURPOSES.find((option) => option.id === find.purpose)?.label, off: () => onFind({ purpose: 'all' }) } : null,
+        ...find.can.map((ability) => ({ label: ABILITY_LABELS[ability], off: () => onFind({ can: find.can.filter((one) => one !== ability) }) })),
+        find.fits ? { label: 'Fits this computer', off: () => onFind({ fits: false }) } : null,
+        ...Object.entries(RANGES).filter(([key]) => find[key] !== 'any').map(([key, range]) => ({ label: `${range.title}: ${range.options.find((option) => option.value === find[key])?.label}`, off: () => onFind({ [key]: 'any' }) }))
+    ].filter(Boolean);
+    const group = (title, children) => (
+        <Container key={title} layout="flex-column" gap="xs" padding="none" width="100%">
+            <Typography size="xxs" color="muted" margin="none">{title}</Typography>
+            <Container layout="flex" gap="xs" padding="none" align="center" width="100%">{children}</Container>
+        </Container>
+    );
+    const filterPanel = (
+        <Container layout="flex-column" gap="sm" padding="sm" width="100%">
+            {group('Good for', PURPOSES.map((option) => choice(option.label, find.purpose === option.id, () => onFind({ purpose: option.id }), option.id)))}
+            {group('Can do', [
+                ...Object.entries(ABILITY_LABELS).map(([ability, label]) => choice(label, find.can.includes(ability), () => onFind({ can: find.can.includes(ability) ? find.can.filter((one) => one !== ability) : [...find.can, ability] }))),
+                choice('Fits this computer', find.fits, () => onFind({ fits: !find.fits }))
+            ])}
+            {Object.entries(RANGES).map(([key, range]) => group(range.title, range.options.map((option) => choice(option.label, find[key] === option.value, () => onFind({ [key]: option.value }), option.value))))}
+        </Container>
+    );
+    const sortPanel = (
+        <Container layout="flex-column" gap="xs" padding="sm" width="100%">
+            <Typography size="xxs" color="muted" margin="none">Order</Typography>
+            {SORTS.map((option) => (
+                <Button key={option.value} size="xs" width="100%" align="start" color={sortChoice() === option.value ? 'primary' : 'secondary'} selected={sortChoice() === option.value} onClick={() => onSort(option.value)}>{option.label}</Button>
+            ))}
+        </Container>
+    );
 
     return (
         <Container ref={top} layout="flex-column" gap="md" padding="none" width="100%">
@@ -494,34 +525,27 @@ const DiscoverTab = ({ catalogue, find, jobs, canManage, ollamaUp, onDownload, o
                         minWidth="220px"
                         flexFill
                     />
-                    <Container padding="none" width="240px">
-                        <Select size="sm" value={sortChoice()} options={SORTS} onChange={(chosen) => onSort(String(chosen?.target?.value ?? chosen))} width="100%" />
+                    <Button size="sm" color={active.length > 0 ? 'primary' : 'secondary'} genie={{ trigger: 'click', padding: 'none', width: '360px', content: filterPanel }} genieTrigger="click">
+                        <Icon name="FiFilter" size="xs" />Filters{active.length > 0 ? ` (${active.length})` : ''}
+                    </Button>
+                    <Button size="sm" color="secondary" genie={{ trigger: 'click', padding: 'none', width: '260px', content: sortPanel }} genieTrigger="click">
+                        <Icon name="FiBarChart2" size="xs" />{SORTS.find((option) => option.value === sortChoice())?.short}
+                    </Button>
+                </Container>
+                {active.length > 0 && (
+                    <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
+                        {active.map((one) => (
+                            <Button key={one.label} size="xs" color="primary" onClick={one.off} title="Remove this filter">
+                                {one.label}<Icon name="FiX" size="xs" />
+                            </Button>
+                        ))}
+                        <Button size="xs" color="secondary" onClick={clear}>Clear all</Button>
                     </Container>
-                </Container>
-                <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
-                    <ButtonGroup size="xs" justify="start" wrap={false} selectable={false}>
-                        {PURPOSES.map((option) => choice(option.label, find.purpose === option.id, () => onFind({ purpose: option.id }), option.id))}
-                    </ButtonGroup>
-                    <ButtonGroup size="xs" spaced justify="start" selectable={false}>
-                        {Object.entries(ABILITY_LABELS).map(([ability, label]) => choice(label, find.can.includes(ability), () => onFind({ can: find.can.includes(ability) ? find.can.filter((one) => one !== ability) : [...find.can, ability] })))}
-                        {choice('Fits this computer', find.fits, () => onFind({ fits: !find.fits }))}
-                    </ButtonGroup>
-                </Container>
-                <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
-                    {Object.entries(RANGES).map(([key, range]) => (
-                        <Container key={key} padding="none" width="200px">
-                            <Select size="xs" value={find[key]} options={range.options.map(({ value, label }) => ({ value, label }))} onChange={(chosen) => onFind({ [key]: String(chosen?.target?.value ?? chosen) })} width="100%" />
-                        </Container>
-                    ))}
-                </Container>
-                <Row>
-                    <Typography size="xxs" color="muted">{summary}</Typography>
-                    {narrowed && (
-                        <Button size="xs" color="secondary" onClick={clear}>
-                            <Icon name="FiX" size="xs" />Clear
-                        </Button>
-                    )}
-                </Row>
+                )}
+                <Typography size="xxs" color="muted" margin="none">{summary}</Typography>
+                {catalogue.plain && (active.length > 0 || sortChoice() !== 'fit') && (
+                    <Typography size="xxs" color="warning" margin="none">This server is older than this page, so the filters and order chosen here are not applied yet. Restart or update the server.</Typography>
+                )}
                 {!canManage && <Typography size="xxs" color="muted">Only an admin or owner can download models.</Typography>}
             </Container>
 
@@ -965,7 +989,8 @@ const ModelsPage = () => {
                 ...(current ? spans : {})
             });
             // A server a little behind this page may not know every choice yet; it is then asked plainly.
-            const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false) : Promise.reject(error)));
+            // When it has to be, the page says so, since what is shown is then not what was chosen.
+            const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false).then((plain) => ({ ...plain, plain: true })) : Promise.reject(error)));
             // An answer overtaken by a newer search is dropped.
             if (mine !== asking.current) return;
             result.size = result.size || 48;
