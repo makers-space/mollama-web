@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { useSearchParams } from 'react-router-dom';
 import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Divider, Icon, Input, Select, Genie, Pagination } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { toolService, skillService, deviceService, describeError } from '../client/ai.client';
+import { toolService, skillService, deviceService, describeError, onReturn } from '../client/ai.client';
 
 const STALE_MS = 60 * 1000;
 // Each listed app's own logo, where the icon sets have one. The few without one get a plain icon for what they do.
@@ -321,8 +321,7 @@ const ToolsPage = () => {
         toolService.catalogue().then((catalogue) => { setApps(catalogue.apps || []); setLocalApps(catalogue.localApps || []); }).catch(() => undefined);
         deviceService.listDevices().then((computers) => setDevices(computers.devices || [])).catch(() => undefined);
         window.desktop?.deviceState?.().then((state) => setHere(state?.deviceId || null));
-        window.addEventListener('focus', load);
-        return () => window.removeEventListener('focus', load);
+        return onReturn(load);
     }, [load]);
 
     const tellResult = useCallback((result) => {

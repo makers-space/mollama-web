@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@contexts/AuthContext';
 import { Page, Container, Card, Typography, Button, Badge, Icon, ProgressBar } from '@components/Components';
 import { NotificationsCard } from '@components/AppNotifications';
-import { chatService, deviceService, modelService, useActivity } from '../client/ai.client';
+import { chatService, deviceService, modelService, useActivity, onReturn } from '../client/ai.client';
 
 const gb = (megabytes) => {
     if (megabytes === null || megabytes === undefined) return 'Unknown';
@@ -86,11 +86,11 @@ const DashboardPage = () => {
 
     useEffect(() => {
         load();
-        window.addEventListener('focus', load);
+        const stop = onReturn(load);
         window.addEventListener('ollama-availability-changed', load);
         window.addEventListener('mollama-chat-changed', load);
         return () => {
-            window.removeEventListener('focus', load);
+            stop();
             window.removeEventListener('ollama-availability-changed', load);
             window.removeEventListener('mollama-chat-changed', load);
         };

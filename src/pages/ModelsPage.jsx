@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, Container, Card, Typography, Button, ButtonGroup, Badge, Icon, Input, Select, ProgressBar, Pagination } from '@components/Components';
 import { useNotification } from '@contexts/NotificationContext';
-import { deviceService, modelService, providerService, describeError, useGuide } from '../client/ai.client';
+import { deviceService, modelService, providerService, describeError, useGuide, onReturn } from '../client/ai.client';
 
 const TABS = [
     { id: 'discover', label: 'Discover' },
@@ -382,7 +382,28 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
 };
 
 const PAGE_SIZES = [4, 8, 12, 24, 48];
-const EVERYTHING = { q: '', purpose: 'all', can: [], fits: false };
+const EVERYTHING = { q: '', purpose: 'all', can: [], fits: false, size: 'any', memory: 'any', params: 'any' };
+// Each range is a band from one figure to the next; the last has no upper end.
+const bands = (name, unit, steps, scale = 1) => [
+    { value: 'any', label: `Any ${name}` },
+    ...steps.map((step, index) => ({
+        value: `${index === 0 ? 0 : steps[index - 1]}-${step}`,
+        label: index === 0 ? `Up to ${step} ${unit}` : `${steps[index - 1]} to ${step} ${unit}`,
+        low: (index === 0 ? 0 : steps[index - 1]) * scale,
+        high: step * scale
+    })),
+    { value: `${steps.at(-1)}-`, label: `Over ${steps.at(-1)} ${unit}`, low: steps.at(-1) * scale, high: null }
+];
+const RANGES = {
+    size: { low: 'minSizeMb', high: 'maxSizeMb', options: bands('download size', 'GB', [2, 5, 10, 20, 40], 1024) },
+    memory: { low: 'minMemoryMb', high: 'maxMemoryMb', options: bands('memory needed', 'GB', [4, 8, 16, 32, 64], 1024) },
+    params: { low: 'minParams', high: 'maxParams', options: bands('model size', 'B', [4, 9, 16, 34, 80]) }
+};
+const rangeQuery = (find) => Object.entries(RANGES).reduce((query, [key, range]) => {
+    const band = range.options.find((option) => option.value === find[key]);
+    if (!band || band.value === 'any') return query;
+    return { ...query, ...(band.low > 0 ? { [range.low]: band.low } : {}), ...(band.high !== null ? { [range.high]: band.high } : {}) };
+}, {});
 const SORTS = [
     { value: 'fit', label: 'Best fit for this computer' },
     { value: 'largest', label: 'Needs the most memory first' },
@@ -428,7 +449,7 @@ const DiscoverTab = ({ catalogue, find, jobs, canManage, ollamaUp, onDownload, o
         onPage(next, perPage);
         top.current?.scrollIntoView({ block: 'start' });
     };
-    const narrowed = Boolean(find.q) || find.purpose !== 'all' || find.can.length > 0 || find.fits;
+    const narrowed = Boolean(find.q) || find.purpose !== 'all' || find.can.length > 0 || find.fits || Object.keys(RANGES).some((key) => find[key] !== 'any');
     const clear = () => {
         searched.current = '';
         setQuery('');
@@ -485,6 +506,13 @@ const DiscoverTab = ({ catalogue, find, jobs, canManage, ollamaUp, onDownload, o
                         {Object.entries(ABILITY_LABELS).map(([ability, label]) => choice(label, find.can.includes(ability), () => onFind({ can: find.can.includes(ability) ? find.can.filter((one) => one !== ability) : [...find.can, ability] })))}
                         {choice('Fits this computer', find.fits, () => onFind({ fits: !find.fits }))}
                     </ButtonGroup>
+                </Container>
+                <Container layout="flex" gap="xs" padding="none" align="center" width="100%">
+                    {Object.entries(RANGES).map(([key, range]) => (
+                        <Container key={key} padding="none" width="200px">
+                            <Select size="xs" value={find[key]} options={range.options.map(({ value, label }) => ({ value, label }))} onChange={(chosen) => onFind({ [key]: String(chosen?.target?.value ?? chosen) })} width="100%" />
+                        </Container>
+                    ))}
                 </Container>
                 <Row>
                     <Typography size="xxs" color="muted">{summary}</Typography>
@@ -921,6 +949,7 @@ const ModelsPage = () => {
         finding.current = wanted;
         setFind(wanted);
         const { q, purpose, can, fits } = wanted;
+        const spans = rangeQuery(wanted);
         const mine = ++asking.current;
         setCatalogueLoading(true);
         try {
@@ -932,7 +961,8 @@ const ModelsPage = () => {
                 ...(current && sort !== 'fit' ? { sort } : {}),
                 ...(current && purpose !== 'all' ? { purpose } : {}),
                 ...(current && can.length > 0 ? { can: can.join(',') } : {}),
-                ...(current && fits ? { fits: true } : {})
+                ...(current && fits ? { fits: true } : {}),
+                ...(current ? spans : {})
             });
             // A server a little behind this page may not know every choice yet; it is then asked plainly.
             const result = await ask(true).catch((error) => (error?.response?.status === 400 ? ask(false) : Promise.reject(error)));
@@ -980,9 +1010,7 @@ const ModelsPage = () => {
     }, [device, loadDevices, loadInstalled, loadCatalogue, loadRunning]);
 
     useEffect(() => {
-        const onFocus = () => refreshRef.current();
-        window.addEventListener('focus', onFocus);
-        return () => window.removeEventListener('focus', onFocus);
+        return onReturn(() => refreshRef.current());
     }, []);
 
     useEffect(() => {

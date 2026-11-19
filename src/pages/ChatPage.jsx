@@ -1067,6 +1067,7 @@ const stepText = (step, active = false) => {
         return active ? `Reading how to draw ${step.input}…` : `Read how to draw ${step.input}`;
     }
     if (step.tool === 'Drawing check') return active ? 'Correcting what it drew…' : 'Corrected what it drew';
+    if (step.tool === 'Question') return active ? 'Asking you a question…' : 'Asked you a question';
     if (step.tool === 'Skill file') return active ? `Reading ${step.input}…` : `Read ${step.input}`;
     if (step.tool === 'Skill library') return active ? `Looking in the skill library for “${step.input}”…` : `Looked in the skill library for “${step.input}”`;
     if (!isSearchStep(step)) {

@@ -1,4 +1,5 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react';
+import axios from 'axios';
 import { useAuth } from '@contexts/AuthContext';
 import { useNotification } from '@contexts/NotificationContext';
 import { Button, Container, Icon, Typography } from '@components/Components';
@@ -174,6 +175,51 @@ api.interceptors.request.use((config) => {
     if (!config.headers['X-Mollama-Device']) Object.assign(config.headers, deviceHeader());
     return config;
 });
+
+// A read that several parts of a page ask for at the same moment is sent once. A few reads that are slow and change
+// rarely are also kept for a short while, so opening a page again does not ask for them again. Anything that changes
+// data forgets what was kept, so nothing shown is older than the last change made from here.
+const KEPT_READS = [/\/skills$/, /\/tools\/catalogue$/, /\/providers$/, /\/prompts$/, /\/guide$/, /\/settings$/, /\/catalogue$/];
+const KEEP_READ_MS = 30000;
+const reads = new Map();
+export const forgetReads = () => reads.clear();
+const sendRequest = axios.getAdapter(api.defaults.adapter);
+api.defaults.adapter = (config) => {
+    if (String(config.method || 'get').toLowerCase() !== 'get') {
+        forgetReads();
+        return sendRequest(config);
+    }
+    if ((config.responseType && config.responseType !== 'json') || config.signal) return sendRequest(config);
+    const key = [config.baseURL, config.url, JSON.stringify(config.params || {}), config.headers?.['X-Mollama-Device'] || ''].join(' ');
+    const have = reads.get(key);
+    // Each asker gets its own copy to work on.
+    const mine = (entry) => entry.answer.then((response) => ({ ...response, config }));
+    if (have && (have.pending || Date.now() - have.at < KEEP_READ_MS)) return mine(have);
+    const entry = { pending: true, at: Date.now() };
+    entry.answer = sendRequest(config).then((response) => {
+        entry.pending = false;
+        entry.at = Date.now();
+        if (!KEPT_READS.some((address) => address.test(String(config.url).split('?')[0]))) reads.delete(key);
+        return response;
+    }, (error) => {
+        reads.delete(key);
+        throw error;
+    });
+    reads.set(key, entry);
+    return mine(entry);
+};
+
+// Coming back to the window reloads a page, but not when it was loaded moments ago.
+export const onReturn = (reload, gapMs = 20000) => {
+    let last = Date.now();
+    const back = () => {
+        if (Date.now() - last < gapMs) return;
+        last = Date.now();
+        reload();
+    };
+    window.addEventListener('focus', back);
+    return () => window.removeEventListener('focus', back);
+};
 
 // The Models page works on one computer at a time; its requests name that computer themselves.
 let viewedDevice = null;
@@ -414,7 +460,12 @@ export const modelService = {
         const watched = viewedDevice || chosenDevice();
         const source = new EventSource(`${API_BASE_URL}/models/downloads/stream${watched ? `?device=${watched}` : ''}`, { withCredentials: true });
         source.addEventListener('snapshot', (event) => onSnapshot(JSON.parse(event.data)));
-        source.addEventListener('progress', (event) => onProgress(JSON.parse(event.data)));
+        source.addEventListener('progress', (event) => {
+            const job = JSON.parse(event.data);
+            // A download that has finished changes which models are installed, which the kept list says too.
+            if (job.status === 'completed' || job.status === 'cancelled') forgetReads();
+            onProgress(job);
+        });
         source.onerror = () => onError?.();
         return () => source.close();
     }
