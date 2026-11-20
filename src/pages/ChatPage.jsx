@@ -1682,8 +1682,8 @@ const ChatPage = () => {
         on: activeSkills.includes(skill.id) ? 'On' : 'Off',
         suggested: skill.suggested ? 'For small models' : 'Any'
     })).sort((a, b) => a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, skillShelf, activeSkills.join(',')]);
-    // The chosen skills show as badges; skills are turned on in the list, so the dropdown's options cannot be picked.
-    const skillOptions = useMemo(() => skills.map((skill) => ({ value: skill.id, label: skill.name, disabled: true })).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })), [skills]);
+    // The chosen skills show as badges with no dropdown; skills are turned on in the list.
+    const skillOptions = useMemo(() => skills.map((skill) => ({ value: skill.id, label: skill.name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })), [skills]);
     // A badge clicked in the chosen skills opens the list where that skill is, on its own shelf.
     const [skillReveal, setSkillReveal] = useState(null);
     const revealSkill = (id) => {
@@ -2636,6 +2636,7 @@ const ChatPage = () => {
                             value={activeSkills}
                             onChange={(ids) => chooseSkills(null, ids)}
                             onBadgeClick={revealSkill}
+                            menu={false}
                             placeholder="No skills on. Tick one in the list below."
                             aria-label="Skills on in this chat"
                         />
