@@ -338,9 +338,12 @@ const loadSkillFile = (address) => {
     }
     return skillFiles.get(key);
 };
+// A page is either a skill's file (template) with its /*NAME*/ markers filled by the Parts, or the text between the
+// tags, whose own markers the Parts fill: a page built by a skill keeps the kit files it holds out of the chat that way.
 const buildFrame = async (content, template) => {
-    if (!isText(template) || !String(template).trim()) return String(content ?? '');
-    let page = await loadSkillFile(template);
+    const own = !isText(template) || !String(template).trim();
+    if (own && !/\/\*[A-Z][A-Z0-9_]*\*\//.test(String(content ?? ''))) return String(content ?? '');
+    let page = own ? String(content ?? '').replace(FRAME_PART, '') : await loadSkillFile(template);
     for (const match of String(content ?? '').matchAll(FRAME_PART)) {
         const part = readAttributes(match[1].replace(/\/\s*$/, ''));
         if (!isText(part.name)) continue;
