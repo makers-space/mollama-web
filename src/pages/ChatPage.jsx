@@ -18,7 +18,7 @@ import { appService } from '../client/app.client';
 const FIT_COLORS = { gpu: 'secondary', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'primary' };
 const FIRST_MESSAGE = 'Explain what you can help me with in three sentences.';
 const MAX_ARTICLES = 10;
-const READABLE = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|pdf|docx|xml|ya?ml|html?|js|jsx|ts|tsx|py|sql|css)$/i;
+const READABLE = /\.(txt|md|markdown|csv|tsv|json|jsonl|log|pdf|docx|xml|ya?ml|html?|js|jsx|ts|tsx|py|java|c|cpp|h|cs|go|rs|rb|php|sql|sh|css|ini|toml|png|jpe?g|webp|gif)$/i;
 const FILE_ICONS = { pdf: 'FiFileText', docx: 'FiFileText', md: 'FiFileText', txt: 'FiFileText', csv: 'FiGrid', tsv: 'FiGrid', json: 'FiSettings', yaml: 'FiSettings', yml: 'FiSettings', png: 'FiImage', jpg: 'FiImage', jpeg: 'FiImage', gif: 'FiImage', mp4: 'FiFilm', mp3: 'FiMusic', js: 'FiCode', py: 'FiCode', html: 'FiCode' };
 
 const formatSize = (bytes) => {
@@ -2488,7 +2488,7 @@ const ChatPage = () => {
                                 ref={fileInputRef}
                                 type="file"
                                 hidden
-                                accept=".txt,.md,.markdown,.csv,.tsv,.json,.log,.pdf,.docx,.xml,.yaml,.yml,.html"
+                                accept=".txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.log,.pdf,.docx,.xml,.yaml,.yml,.html,.htm,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.cs,.go,.rs,.rb,.php,.sql,.sh,.css,.ini,.toml,.png,.jpg,.jpeg,.webp,.gif"
                                 onChange={(event) => {
                                     const file = event.target.files?.[0];
                                     event.target.value = '';
