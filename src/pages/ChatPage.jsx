@@ -1424,6 +1424,14 @@ const ChatPage = () => {
     const pieceRef = useRef(null);
     const syncRef = useRef(null);
     chatRef.current = chat;
+    // The chat asked for in the address. A reply still running in a chat that was left never takes the page back.
+    const routeRef = useRef(routeId || null);
+    routeRef.current = routeId || null;
+    const wanted = (id) => routeRef.current === id;
+    const goTo = (id, options) => {
+        routeRef.current = id || null;
+        navigate(id ? `/chat/${id}` : '/chat', options);
+    };
     const fileInputRef = useRef(null);
     const editsRef = useRef(0);
     const saveChat = async (id, changes) => {
@@ -1732,7 +1740,7 @@ const ChatPage = () => {
         body.webSearch = draftSearch;
         const created = (await chatService.create(body)).chat;
         setChat(created);
-        navigate(`/chat/${created.id}`, { replace: true });
+        goTo(created.id, { replace: true });
         return created;
     };
 
@@ -1770,7 +1778,7 @@ const ChatPage = () => {
             return;
         }
         if (event.type === 'accepted' && follow.joined) {
-            chatService.get(follow.chatId).then((result) => turnRef.current === follow.chatId && setChat(result.chat)).catch(() => {});
+            chatService.get(follow.chatId).then((result) => turnRef.current === follow.chatId && wanted(follow.chatId) && setChat(result.chat)).catch(() => {});
         }
         applyEvent(event);
     };
@@ -1807,7 +1815,7 @@ const ChatPage = () => {
         if (follow.chatId !== piece.chatId) {
             // Another of this person's apps started a reply in the chat that is open here.
             const open = chatRef.current;
-            if (open?.id === piece.chatId && piece.event.type !== 'end') {
+            if (open?.id === piece.chatId && wanted(piece.chatId) && piece.event.type !== 'end') {
                 followLive(open, { joined: true, content: '', thinking: '', ahead: null, started: false });
                 syncLive();
             }
@@ -1851,7 +1859,7 @@ const ChatPage = () => {
         if (live || editsRef.current > 0) return;
         try {
             const next = (await chatService.get(open.id)).chat;
-            if (chatRef.current?.id !== next.id || editsRef.current > 0) return;
+            if (chatRef.current?.id !== next.id || !wanted(next.id) || editsRef.current > 0) return;
             setChat(next);
             if (next.replying) joinReply(next);
         } catch {
@@ -1948,7 +1956,7 @@ const ChatPage = () => {
         } catch {
             next = target;
         }
-        if (turnRef.current !== target.id) return;
+        if (turnRef.current !== target.id || !wanted(target.id)) return;
         setChat(next);
         if (next.replying) {
             joinReply(next);
@@ -1973,7 +1981,7 @@ const ChatPage = () => {
         turnRef.current = target.id;
         setLive({ joined: true, content: '', thinking: '', ahead: null, started: false });
         const onEvent = (event) => {
-            if (event.type === 'accepted') chatService.get(target.id).then((result) => turnRef.current === target.id && setChat(result.chat)).catch(() => {});
+            if (event.type === 'accepted') chatService.get(target.id).then((result) => turnRef.current === target.id && wanted(target.id) && setChat(result.chat)).catch(() => {});
             applyEvent(event);
         };
         const joined = await chatService.rejoin(target.id, { signal: controller.signal, onEvent }).catch(() => false);
@@ -1983,6 +1991,7 @@ const ChatPage = () => {
             settle(target);
             return;
         }
+        if (!wanted(target.id)) return;
         try {
             setChat((await chatService.get(target.id)).chat);
         } catch {
@@ -2034,13 +2043,13 @@ const ChatPage = () => {
         setChat(null);
         setDraftModel(null);
         setDraftSetup(emptySetup);
-        navigate('/chat');
+        goTo(null);
     };
 
     const openChat = (id) => {
         closePop();
         if (id !== chat?.id) leave();
-        navigate(`/chat/${id}`);
+        goTo(id);
     };
 
     const saveSetup = async () => {
@@ -2178,7 +2187,7 @@ const ChatPage = () => {
         try {
             const next = (await chatService.summarise(chat.id)).chat;
             setChat(next);
-            navigate(`/chat/${next.id}`);
+            goTo(next.id);
             loadChats(search);
             success('A new chat was started from a summary of the old one.');
         } catch (error) {
