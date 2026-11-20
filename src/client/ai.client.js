@@ -591,6 +591,7 @@ export const fileService = {
     browse: (path = '/') => api.get('/files/browse', { params: { path }, timeout: 120000 }),
     text: (path, model) => api.get('/files/text', { params: model ? { path, model } : { path }, timeout: 120000 }),
     save: (folder, name, content) => api.post('/files/save', { folder, name, content }, { timeout: 120000 }),
+    saveAddress: (folder, name, url) => api.post('/files/save-address', { folder, name, url }, { timeout: 180000 }),
     remote: (url) => api.get('/files/remote', { params: { url }, responseType: 'blob', timeout: 120000 })
 };
 

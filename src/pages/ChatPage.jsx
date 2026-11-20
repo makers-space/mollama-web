@@ -677,6 +677,93 @@ const InlineModel = ({ content, format = 'obj', fileName, ...props }) => {
     );
 };
 
+// What a reply drew or showed that can be kept as a file in FilesystemOne: each piece is either text the reply holds
+// (or builds, for a page made from a skill's files) or a file at a web address, which the server fetches and saves.
+const fileSafe = (text, fallback) => String(text || '').replace(/[\\/:*?"<>|\0]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || fallback;
+const nameFromAddress = (address, fallback) => {
+    try {
+        return fileSafe(decodeURIComponent(new URL(address).pathname.split('/').pop() || ''), fallback);
+    } catch {
+        return fallback;
+    }
+};
+const csvOf = (rows) => {
+    const keys = [...new Set(rows.flatMap((row) => Object.keys(row || {})))];
+    const cell = (value) => {
+        const text = String(value ?? '');
+        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    return [keys.join(','), ...rows.map((row) => keys.map((key) => cell(row?.[key])).join(','))].join('\n');
+};
+const assetsOf = (node, found = []) => {
+    if (!node || isText(node)) return found;
+    if (Array.isArray(node)) {
+        node.forEach((child) => assetsOf(child, found));
+        return found;
+    }
+    const name = node.component;
+    const props = node.props || {};
+    const remote = isText(props.src) && /^https:\/\//i.test(String(props.src)) ? String(props.src) : null;
+    const add = (asset) => found.push({ ...asset, kind: name });
+    if (name === 'Frame') add({ name: `${fileSafe(props.title, 'page')}.html`, build: () => buildFrame(props.content, props.template) });
+    else if (name === 'Flow' && isText(props.content)) add({ name: 'diagram.flow', text: `<Flow${isText(props.arrange) ? ` arrange="${props.arrange}"` : ''}>\n${String(props.content).trim()}\n</Flow>\n` });
+    else if (name === 'Data' && remote) add({ name: nameFromAddress(remote, 'table.csv'), address: remote });
+    else if (name === 'Data' && Array.isArray(props.data) && props.data.length > 0) add({ name: 'table.csv', text: csvOf(props.data) });
+    else if (name === 'Image' && remote) add({ name: nameFromAddress(remote, 'picture'), address: remote });
+    else if (name === 'Image' && isText(props.content) && /<svg[\s>]/i.test(String(props.content))) add({ name: `${fileSafe(props.alt, 'drawing')}.svg`, text: String(props.content) });
+    else if (['Video', 'Audio', 'PdfViewer', 'Slides', 'Sheet'].includes(name) && remote) add({ name: nameFromAddress(remote, name.toLowerCase()), address: remote });
+    else if (name === 'Model3D' && remote) add({ name: nameFromAddress(remote, 'model'), address: remote });
+    else if (name === 'Model3D' && isText(props.content)) add({ name: `${fileSafe(props.fileName, 'model').replace(/\.(obj|stl)$/i, '')}.${String(props.format || 'obj').toLowerCase() === 'stl' ? 'stl' : 'obj'}`, text: String(props.content) });
+    else if (name === 'Editor' && remote) add({ name: nameFromAddress(remote, 'file.txt'), address: remote });
+    else if (name === 'Editor' && isText(props.content)) add({ name: `${props.mode === 'code' ? 'code' : 'document'}.${props.mode === 'code' ? CODE_EXTENSIONS[String(props.language || '').toLowerCase()] || 'txt' : 'md'}`, text: String(props.content) });
+    if (node.children) assetsOf(node.children, found);
+    return found;
+};
+// Every piece of one reply: the components it drew, and the pictures its words showed from the web.
+const replyAssets = (content) => {
+    const text = String(content || '');
+    const drawn = [...text.matchAll(/```component\n([\s\S]*?)```/g)].flatMap((match) => readComponents(match[1]).filter((item) => item.node).flatMap((item) => assetsOf(item.node)));
+    const pictures = [...text.matchAll(/!\[[^\]]*\]\((https:\/\/[^)\s]+)\)/g)].map((match) => ({ name: nameFromAddress(match[1], 'picture'), address: match[1], kind: 'Image' }));
+    return [...drawn, ...pictures];
+};
+const saveAsset = async (asset, folder) => {
+    if (asset.address) return (await fileService.saveAddress(folder, asset.name, asset.address)).path;
+    const text = asset.build ? await asset.build() : asset.text;
+    return (await fileService.save(folder, asset.name, text)).path;
+};
+// A button that saves the given pieces into a folder the person picks. A name already taken there is kept and the
+// new file gets a new name.
+const SaveAssets = ({ assets, label = 'Save to my files' }) => {
+    const { success, error: notifyError } = useNotification();
+    const [open, setOpen] = useState(false);
+    const save = async (folder) => {
+        setOpen(false);
+        const saved = [];
+        const failed = [];
+        for (const asset of assets) {
+            try {
+                saved.push(await saveAsset(asset, folder));
+            } catch (error) {
+                failed.push(`${asset.name}: ${describeError(error, 'it could not be saved')}`);
+            }
+        }
+        if (saved.length > 0) success(saved.length === 1 ? `Saved to ${saved[0]}` : `Saved ${saved.length} files to ${folder}`);
+        if (failed.length > 0) notifyError(`Not saved: ${failed.join('; ')}`);
+    };
+    if (assets.length === 0) return null;
+    return (
+        <Pop label={label} icon="FiHardDrive" size="xxs" open={open} onOpen={() => setOpen(true)} onClose={() => setOpen(false)} width="440px" title={assets.map((asset) => asset.name).join(', ')}>
+            <FileBrowser mode="save" onPick={save} onBack={() => setOpen(false)} />
+        </Pop>
+    );
+};
+
+// Saves every piece of a reply at once, when it has more than one.
+const ReplySaveAll = ({ content }) => {
+    const assets = useMemo(() => replyAssets(content), [content]);
+    return assets.length > 1 ? <SaveAssets assets={assets} label={`Save all ${assets.length} to my files`} /> : null;
+};
+
 const renderBlock = (node, context, key, parent = null) => {
     if (node === null || node === undefined) return null;
     if (isText(node)) return node;
@@ -988,6 +1075,7 @@ const ComponentBlock = ({ source }) => {
     const shown = context.live ? items.filter((item, index) => !(index === items.length - 1 && (item.reason || item.text))) : items;
     const failed = shown.some((item) => item.reason);
     const pending = context.live && shown.length < items.length;
+    const assets = useMemo(() => (context.live ? [] : items.filter((item) => item.tree).flatMap((item) => assetsOf(item.tree))), [items, context.live]);
 
     return (
         <Container layout="flex-column" gap="sm" padding="none" width="100%" marginBottom="sm">
@@ -1007,6 +1095,7 @@ const ComponentBlock = ({ source }) => {
             {(pending || (context.live && items.length === 0)) && <Typography size="xs" color="muted">Building a component…</Typography>}
             {failed && <CodeView code={source} language="xml" />}
             {!context.live && items.length === 0 && <CodeView code={source} language="xml" />}
+            {assets.length > 0 && <Container layout="flex" justify="end" padding="none" width="100%"><SaveAssets assets={assets} /></Container>}
         </Container>
     );
 };
@@ -1335,6 +1424,7 @@ const Message = ({ message, isLast, busy, onRegenerate, onEdit }) => {
                     {!mine && isLast && !busy && (
                         <Button size="xxs" variant="ghost" title="Regenerate" aria-label="Regenerate" onClick={onRegenerate}><Icon name="FiRefreshCw" /></Button>
                     )}
+                    {!mine && <ReplySaveAll content={message.content} />}
                     {!mine && message.stats?.tokensPerSecond && (
                         <Typography size="xs" color="muted">{message.model} · {message.stats.tokensPerSecond} tokens per second</Typography>
                     )}
