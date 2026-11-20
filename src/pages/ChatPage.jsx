@@ -1686,7 +1686,7 @@ const ChatPage = () => {
     const mySkillCount = skills.filter((skill) => skill.source === 'mine').length;
     const skillFields = useMemo(() => ({
         skill: { label: 'Skill', component: Typography, props: { weight: 'semibold' } },
-        about: { label: 'About', component: Typography, props: { color: 'muted', size: 'xxs' }, truncate: true, maxLength: 90 },
+        about: { label: 'About', component: Typography, props: { color: 'muted', size: 'xxs' } },
         project: { label: 'Project', component: Typography, props: { color: 'muted' } },
         works: { label: 'Works', component: Badge, transform: (value) => ({ children: value, color: value === 'Guidance only' ? 'warning' : 'success', title: value === 'Guidance only' ? 'Its guidance works here. Some of its steps need commands or files that Mollama does not have yet.' : 'Everything it asks for is available.' }) },
         tokens: { label: 'Tokens', component: Typography, transform: (value) => ({ children: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value), color: value > 4000 ? 'warning' : 'muted', title: value > 4000 ? 'A long skill. A small model may not have room for it and its conversation, and may ignore it.' : undefined }) }
@@ -2584,7 +2584,7 @@ const ChatPage = () => {
                 open={pop === 'setup'}
                 onOpen={() => openPop('setup')}
                 onClose={closePop}
-                width={view === 'skills' ? '720px' : '480px'}
+                width={view === 'skills' ? '1040px' : '480px'}
                 tall
             >
                 {view === 'files' && <FileBrowser mode="read" onPick={articleFromFile} onBack={() => setView('main')} />}
