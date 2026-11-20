@@ -10,6 +10,7 @@ import {
     ProgressBar, CircularProgress, Data, Flow, TreeView, Image, Video, Audio, PdfViewer, Slides, Sheet, Model3D, Editor, Frame
 } from '@components/Components';
 import { parseFlow } from '@components/Flow';
+import { readAppTheme } from '@components/Frame';
 import { useNotification } from '@contexts/NotificationContext';
 import { useAuth } from '@contexts/AuthContext';
 import { chatService, deviceService, fileService, modelService, promptService, skillService, pickerMemory, describeError, downloadText, useGuide } from '../client/ai.client';
@@ -354,16 +355,29 @@ const buildFrame = async (content, template) => {
 };
 // palette="ground:background, muted:text 65%" gives the page's own colour variables the app theme's colours: each pair
 // is a variable of the page and a theme colour, with an optional strength.
-const framePalette = (palette) => {
+// With fallbacks, each theme colour also carries the colour it has now, for a saved page opened outside the app.
+const framePalette = (palette, fallbacks = {}) => {
     if (!isText(palette)) return null;
     const pairs = String(palette).split(',').map((pair) => pair.split(':').map((part) => part.trim())).filter((pair) => pair.length === 2 && /^[\w-]+$/.test(pair[0]));
     const variables = {};
     for (const [name, value] of pairs) {
         const [token, strength] = value.split(/\s+/);
         if (!/^[a-z]+$/.test(token)) continue;
-        variables[name] = /^\d{1,3}%$/.test(strength || '') ? `color-mix(in srgb, var(--app-${token}) ${strength}, transparent)` : `var(--app-${token})`;
+        const colour = fallbacks[token] ? `var(--app-${token}, ${String(fallbacks[token]).replace(/[;{}<>]/g, '')})` : `var(--app-${token})`;
+        variables[name] = /^\d{1,3}%$/.test(strength || '') ? `color-mix(in srgb, ${colour} ${strength}, transparent)` : colour;
     }
     return Object.keys(variables).length > 0 ? variables : null;
+};
+// A saved page keeps its palette, so it takes the theme of the app it is opened in (Mollama's or FilesystemOne's frame
+// hands it the --app- colours) and today's colours anywhere else.
+const savedFrame = async (content, template, palette) => {
+    const page = await buildFrame(content, template);
+    const variables = framePalette(palette, readAppTheme());
+    if (!variables) return page;
+    const style = `<style>:root,:root[data-theme]{${Object.entries(variables).map(([name, value]) => `--${name}:${value} !important;`).join('')}}</style>`;
+    if (/<\/head>/i.test(page)) return page.replace(/<\/head>/i, () => `${style}</head>`);
+    if (/<html[^>]*>/i.test(page)) return page.replace(/<html[^>]*>/i, (root) => `${root}<head>${style}</head>`);
+    return `<!doctype html><html><head><meta charset="utf-8">${style}</head><body>${page}</body></html>`;
 };
 const ChatFrame = ({ content, template, height, title, palette, live }) => {
     const variables = useMemo(() => framePalette(palette), [palette]);
@@ -705,7 +719,7 @@ const assetsOf = (node, found = []) => {
     const props = node.props || {};
     const remote = isText(props.src) && /^https:\/\//i.test(String(props.src)) ? String(props.src) : null;
     const add = (asset) => found.push({ ...asset, kind: name });
-    if (name === 'Frame') add({ name: `${fileSafe(props.title, 'page')}.html`, build: () => buildFrame(props.content, props.template) });
+    if (name === 'Frame') add({ name: `${fileSafe(props.title, 'page')}.html`, build: () => savedFrame(props.content, props.template, props.palette) });
     else if (name === 'Flow' && isText(props.content)) add({ name: 'diagram.flow', text: `<Flow${isText(props.arrange) ? ` arrange="${props.arrange}"` : ''}>\n${String(props.content).trim()}\n</Flow>\n` });
     else if (name === 'Data' && remote) add({ name: nameFromAddress(remote, 'table.csv'), address: remote });
     else if (name === 'Data' && Array.isArray(props.data) && props.data.length > 0) add({ name: 'table.csv', text: csvOf(props.data) });
