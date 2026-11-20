@@ -1256,6 +1256,8 @@ const FileBrowser = ({ mode, onPick, onBack }) => {
         };
     }, [path]);
 
+    const entries = useMemo(() => (listing ? listing.entries.filter((entry) => mode !== 'save' || entry.type === 'folder') : []), [listing, mode]);
+
     const crumbs = useMemo(() => {
         const parts = path.split('/').filter(Boolean);
         return [{ name: 'My files', path: '/' }, ...parts.map((name, index) => ({ name, path: `/${parts.slice(0, index + 1).join('/')}` }))];
@@ -1278,12 +1280,12 @@ const FileBrowser = ({ mode, onPick, onBack }) => {
 
             {problem && <Typography size="sm" color="error">{problem}</Typography>}
             {!problem && !listing && <Typography size="sm" color="muted">Loading your files…</Typography>}
-            {listing && listing.entries.length === 0 && <Typography size="sm" color="muted">This folder is empty.</Typography>}
-            {listing && listing.entries.length > 0 && (
+            {listing && entries.length === 0 && <Typography size="sm" color="muted">{mode === 'save' ? 'No folders inside this one.' : 'This folder is empty.'}</Typography>}
+            {entries.length > 0 && (
                 <Container layout="flex-column" gap="none" padding="none" width="100%">
-                    {listing.entries.map((entry) => {
+                    {entries.map((entry) => {
                         const isFolder = entry.type === 'folder';
-                        const usable = isFolder || (mode !== 'save' && READABLE.test(entry.name));
+                        const usable = isFolder || READABLE.test(entry.name);
                         const extension = entry.name.split('.').pop()?.toLowerCase();
                         return (
                             <Row
@@ -1291,7 +1293,7 @@ const FileBrowser = ({ mode, onPick, onBack }) => {
                                 icon={isFolder ? 'FiFolder' : FILE_ICONS[extension] || 'FiFile'}
                                 iconColor={isFolder ? 'primary' : 'secondary'}
                                 label={entry.name}
-                                title={usable ? entry.path : mode === 'save' ? 'Open a folder to save in' : 'This kind of file cannot be read as text'}
+                                title={usable ? entry.path : 'This kind of file cannot be read as text'}
                                 disabled={!usable}
                                 onClick={() => (isFolder ? setPath(entry.path) : onPick(entry.path, entry.name))}
                             >
