@@ -539,7 +539,7 @@ export const chatService = {
         headers: { 'Content-Type': 'application/octet-stream' },
         timeout: 120000
     }),
-    attachFile: (id, path) => api.post(`/chats/${id}/attachments`, { path }, { timeout: 60000 }),
+    attachFile: (id, path) => api.post(`/chats/${id}/attachments`, { path }, { timeout: 120000 }),
     removeAttachment: (id, attachmentId) => api.delete(`/chats/${id}/attachments/${attachmentId}`),
 
     stop: (id) => api.post(`/chats/${id}/stop`, {}),
@@ -587,9 +587,10 @@ export const promptService = {
 };
 
 export const fileService = {
-    browse: (path = '/') => api.get('/files/browse', { params: { path } }),
-    text: (path, model) => api.get('/files/text', { params: model ? { path, model } : { path }, timeout: 60000 }),
-    save: (folder, name, content) => api.post('/files/save', { folder, name, content }),
+    // FilesystemOne may be waking up, which can take over a minute, so these wait longer than other requests.
+    browse: (path = '/') => api.get('/files/browse', { params: { path }, timeout: 120000 }),
+    text: (path, model) => api.get('/files/text', { params: model ? { path, model } : { path }, timeout: 120000 }),
+    save: (folder, name, content) => api.post('/files/save', { folder, name, content }, { timeout: 120000 }),
     remote: (url) => api.get('/files/remote', { params: { url }, responseType: 'blob', timeout: 120000 })
 };
 

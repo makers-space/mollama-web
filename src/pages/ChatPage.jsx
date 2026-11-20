@@ -1354,6 +1354,32 @@ const liveStatus = (live) => {
     return 'Thinking…';
 };
 
+// How long the reply has been going, so a long step never looks like a page that stopped.
+const LiveClock = () => {
+    const since = useRef(Date.now());
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+    const seconds = Math.floor((now - since.current) / 1000);
+    return <Typography size="xxs" color="muted">Working for {seconds >= 60 ? `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`}</Typography>;
+};
+
+// What the model is writing into a function call, shown as it arrives: the end of a program, a page or a figure.
+const DRAFT_TAIL = 1600;
+// The call arrives as JSON, so the escapes inside its strings are turned back into the characters they stand for.
+const readableDraft = (text) => String(text).replace(/\\n/g, '\n').replace(/\\t/g, '  ').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+const DraftView = ({ text }) => {
+    const shown = readableDraft(text);
+    return (
+        <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false} shadow={false} borderStrength="soft">
+            <Typography size="xxs" color="muted">Being written: {shown.length.toLocaleString()} characters so far</Typography>
+            <Typography as="pre" size="xxs" font="monospace" color="secondary">{shown.length > DRAFT_TAIL ? `…${shown.slice(-DRAFT_TAIL)}` : shown}</Typography>
+        </Card>
+    );
+};
+
 const LIVE_BLOCKS = { send: null, live: true };
 const Centered = ({ gap = 'sm', children }) => (
     <Container layout="flex" justify="center" padding="sm" width="100%">
@@ -1775,7 +1801,8 @@ const ChatPage = () => {
         if (event.type === 'thinking') setLive((now) => now && { ...now, thinking: now.thinking + event.text });
         if (event.type === 'token') setLive((now) => now && { ...now, content: now.content + event.text });
         if (event.type === 'replace') setLive((now) => now && { ...now, content: event.text });
-        if (event.type === 'tool') setLive((now) => now && { ...now, steps: [...(now.steps || []), { tool: event.tool, input: event.input }] });
+        if (event.type === 'tool') setLive((now) => now && { ...now, draft: '', steps: [...(now.steps || []), { tool: event.tool, input: event.input }] });
+        if (event.type === 'draft') setLive((now) => now && { ...now, draft: (now.draft || '') + event.text });
         if (event.type === 'permission') setLive((now) => now && { ...now, permission: { id: event.id, tool: event.tool, input: event.input } });
         if (event.type === 'toolFailed' || event.type === 'token') setLive((now) => (now?.permission ? { ...now, permission: null } : now));
         if (event.type === 'toolFailed') setLive((now) => now && { ...now, steps: (now.steps || []).map((step, index, all) => (index === all.length - 1 ? { ...step, failed: event.failed } : step)) });
@@ -2420,6 +2447,7 @@ const ChatPage = () => {
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
                                 {live.steps?.length > 0 && <Steps steps={live.steps} live={!live.stopping && Boolean(live.note)} />}
+                                {live.draft && !live.stopping && <DraftView text={live.draft} />}
                                 {live.permission && (
                                     <Card layout="flex-column" gap="xs" padding="sm" width="100%" hover={false} borderColor="primary">
                                         <Container layout="flex" align="center" gap="xs" padding="none" wrap={false}>
@@ -2445,6 +2473,7 @@ const ChatPage = () => {
                                 {!live.content && (
                                         <Typography key={liveStatus(live)} color="secondary" size="xxs" animation="typewriter">{liveStatus(live)}</Typography>
                                     )}
+                                {!live.stopping && <LiveClock />}
                             </Container>
                         )}
                         {live && (chat?.queued || []).map((item, index) => (
