@@ -1402,6 +1402,7 @@ const ChatPage = () => {
     const [live, setLive] = useState(null);
     const [pop, setPop] = useState(null);
     const [view, setView] = useState('main');
+    const [skillShelf, setSkillShelf] = useState('library');
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [working, setWorking] = useState(null);
     const [draftSetup, setDraftSetup] = useState(emptySetup);
@@ -1670,7 +1671,7 @@ const ChatPage = () => {
     const modelUsesTools = !modelAbilities?.length || modelAbilities.includes('tools');
     // Every skill as a row of the Data component, in name order: its search, column filters, sorting and pages are the
     // Data component's own, and a row's checkbox turns the skill on or off for this chat.
-    const skillRows = useMemo(() => skills.map((skill) => ({
+    const skillRows = useMemo(() => skills.filter((skill) => (skillShelf === 'mine') === (skill.source === 'mine')).map((skill) => ({
         id: skill.id,
         skill: skill.name,
         about: skill.description || '',
@@ -1680,15 +1681,20 @@ const ChatPage = () => {
         length: skill.tokens > 4000 ? 'Long' : skill.tokens >= 1000 ? 'Medium' : 'Short',
         on: activeSkills.includes(skill.id) ? 'On' : 'Off',
         suggested: skill.suggested ? 'For small models' : 'Any'
-    })).sort((a, b) => a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, activeSkills.join(',')]);
+    })).sort((a, b) => (a.on === b.on ? 0 : a.on === 'On' ? -1 : 1) || a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, skillShelf, activeSkills.join(',')]);
+    const skillOptions = useMemo(() => skills.map((skill) => ({ value: skill.id, label: skill.name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })), [skills]);
+    const mySkillCount = skills.filter((skill) => skill.source === 'mine').length;
     const skillFields = useMemo(() => ({
         skill: { label: 'Skill', component: Typography, props: { weight: 'semibold' } },
-        about: { label: 'About', component: Typography, props: { color: 'muted' }, truncate: true, maxLength: 34 },
+        about: { label: 'About', component: Typography, props: { color: 'muted', size: 'xxs' }, truncate: true, maxLength: 90 },
         project: { label: 'Project', component: Typography, props: { color: 'muted' } },
         works: { label: 'Works', component: Badge, transform: (value) => ({ children: value, color: value === 'Guidance only' ? 'warning' : 'success', title: value === 'Guidance only' ? 'Its guidance works here. Some of its steps need commands or files that Mollama does not have yet.' : 'Everything it asks for is available.' }) },
         tokens: { label: 'Tokens', component: Typography, transform: (value) => ({ children: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value), color: value > 4000 ? 'warning' : 'muted', title: value > 4000 ? 'A long skill. A small model may not have room for it and its conversation, and may ignore it.' : undefined }) }
     }), []);
-    const chooseSkills = (chosen, ids) => {
+    // The Data checkboxes see only the shelf on show, so the chosen skills from the other shelf are kept alongside.
+    const chooseSkills = (chosen, shown) => {
+        const hidden = activeSkills.filter((id) => !skillRows.some((row) => row.id === id));
+        const ids = [...hidden, ...shown.filter((id) => !hidden.includes(id))];
         if (ids.length > maxSkills) {
             notifyError(`A chat holds at most ${maxSkills} skills. Turn one off to add another.`);
             return;
@@ -2578,7 +2584,7 @@ const ChatPage = () => {
                 open={pop === 'setup'}
                 onOpen={() => openPop('setup')}
                 onClose={closePop}
-                width={view === 'skills' ? '860px' : '480px'}
+                width={view === 'skills' ? '720px' : '480px'}
                 tall
             >
                 {view === 'files' && <FileBrowser mode="read" onPick={articleFromFile} onBack={() => setView('main')} />}
@@ -2615,18 +2621,41 @@ const ChatPage = () => {
                         {activeSkills.length >= maxSkills
                             ? <Typography size="xxs" color="warning">{`${activeSkills.length} of ${maxSkills} skills are on, which is the most a chat holds, so the other switches are off. Turn one off to add another.`}</Typography>
                             : <Typography size="xxs" color="muted">{`${activeSkills.length} of ${maxSkills} on. ${savedNote} A skill is instructions, not a tool: the model reads it with every message, so turn on only what this chat needs.`}</Typography>}
-                        <Data
-                            size="xs"
+                        <Select
+                            size="md"
                             width="100%"
-                            variant="table"
-                            data={skillRows}
-                            fieldConfig={skillFields}
-                            exclude={['id', 'length', 'on', 'suggested']}
-                            pageSize={10}
-                            selector
-                            selectedItems={activeSkills}
-                            onSelectionChange={chooseSkills}
+                            multiSelect
+                            options={skillOptions}
+                            value={activeSkills}
+                            onChange={(ids) => chooseSkills(null, ids)}
+                            placeholder="No skills on. Search to add one..."
+                            aria-label="Skills on in this chat"
                         />
+                        <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
+                            <ButtonGroup size="xxs">
+                                <Button size="xxs" variant={skillShelf === 'library' ? 'primary' : 'secondary'} onClick={() => setSkillShelf('library')}>{`Library · ${skills.length - mySkillCount}`}</Button>
+                                <Button size="xxs" variant={skillShelf === 'mine' ? 'primary' : 'secondary'} onClick={() => setSkillShelf('mine')}>{`My skills · ${mySkillCount}`}</Button>
+                            </ButtonGroup>
+                            {skillShelf === 'mine' && <Button size="xxs" variant="ghost" onClick={() => navigate('/tools')}><Icon name="FiPlus" size="xs" />Add a skill</Button>}
+                        </Container>
+                        {skillRows.length === 0
+                            ? <Typography size="xs" color="muted">You have not added any skills of your own yet. Add one by its address under Tools, and it shows here.</Typography>
+                            : (
+                                <Data
+                                    key={skillShelf}
+                                    flat
+                                    size="xs"
+                                    width="100%"
+                                    variant="list"
+                                    data={skillRows}
+                                    fieldConfig={skillFields}
+                                    exclude={['id', 'length', 'on', 'suggested']}
+                                    pageSize={10}
+                                    selector
+                                    selectedItems={activeSkills.filter((id) => skillRows.some((row) => row.id === id))}
+                                    onSelectionChange={chooseSkills}
+                                />
+                            )}
                     </Container>
                 )}
                 {view === 'main' && (
