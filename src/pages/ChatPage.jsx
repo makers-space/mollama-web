@@ -1681,8 +1681,15 @@ const ChatPage = () => {
         length: skill.tokens > 4000 ? 'Long' : skill.tokens >= 1000 ? 'Medium' : 'Short',
         on: activeSkills.includes(skill.id) ? 'On' : 'Off',
         suggested: skill.suggested ? 'For small models' : 'Any'
-    })).sort((a, b) => (a.on === b.on ? 0 : a.on === 'On' ? -1 : 1) || a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, skillShelf, activeSkills.join(',')]);
-    const skillOptions = useMemo(() => skills.map((skill) => ({ value: skill.id, label: skill.name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })), [skills]);
+    })).sort((a, b) => a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, skillShelf, activeSkills.join(',')]);
+    // The chosen skills show as badges; skills are turned on in the list, so the dropdown's options cannot be picked.
+    const skillOptions = useMemo(() => skills.map((skill) => ({ value: skill.id, label: skill.name, disabled: true })).sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })), [skills]);
+    // A badge clicked in the chosen skills opens the list where that skill is, on its own shelf.
+    const [skillReveal, setSkillReveal] = useState(null);
+    const revealSkill = (id) => {
+        setSkillShelf(skills.find((skill) => skill.id === id)?.source === 'mine' ? 'mine' : 'library');
+        setSkillReveal({ id, at: Date.now() });
+    };
     const mySkillCount = skills.filter((skill) => skill.source === 'mine').length;
     const skillFields = useMemo(() => ({
         skill: { label: 'Skill', component: Typography, props: { weight: 'semibold' } },
@@ -2628,7 +2635,8 @@ const ChatPage = () => {
                             options={skillOptions}
                             value={activeSkills}
                             onChange={(ids) => chooseSkills(null, ids)}
-                            placeholder="No skills on. Search to add one..."
+                            onBadgeClick={revealSkill}
+                            placeholder="No skills on. Tick one in the list below."
                             aria-label="Skills on in this chat"
                         />
                         <Container layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%">
@@ -2644,6 +2652,7 @@ const ChatPage = () => {
                                 <Data
                                     key={skillShelf}
                                     flat
+                                    reveal={skillReveal}
                                     size="xs"
                                     width="100%"
                                     variant="list"
