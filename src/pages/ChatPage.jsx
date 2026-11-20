@@ -1113,6 +1113,29 @@ const PlainText = ({ text }) => (
     </Container>
 );
 
+// What the model is sent in place of a long chat's older messages.
+const MemoryView = ({ text }) => (
+    <Container layout="flex-column" gap="xs" padding="none" width="100%">
+        <Typography size="xs" weight="semibold">What the model remembers of the messages above</Typography>
+        <Typography size="xxs" color="muted">The chat's own model wrote this to save room. It is sent instead of those messages; you still see them all here.</Typography>
+        <Markdown text={text} />
+    </Container>
+);
+
+// The notes a model kept with save_note, sent with every message of the chat.
+const NotesView = ({ notes }) => (
+    <Container layout="flex-column" gap="xs" padding="none" width="100%">
+        <Typography size="xs" weight="semibold">Notes the model kept</Typography>
+        <Typography size="xxs" color="muted">The model saves these to use later. They are sent with every message of this chat.</Typography>
+        {notes.map((note) => (
+            <Container key={note.key} layout="flex-column" gap="none" padding="none" width="100%">
+                <Typography size="xs" weight="medium">{note.key}</Typography>
+                <Typography size="xxs" color="muted">{note.text}</Typography>
+            </Container>
+        ))}
+    </Container>
+);
+
 const Thinking = ({ text, startOpen = false }) => {
     const [open, setOpen] = useState(startOpen);
     return (
@@ -2375,14 +2398,24 @@ const ChatPage = () => {
                             </Container>
                         )}
                         {shown.map((message, index) => (
-                            <Message
-                                key={message.id}
-                                message={message}
-                                isLast={index === shown.length - 1}
-                                busy={busy}
-                                onRegenerate={() => runTurn(chat, { regenerate: true }, null)}
-                                onEdit={(messageIndex, content) => runTurn(chat, { content, editIndex: messageIndex }, content)}
-                            />
+                            <React.Fragment key={message.id}>
+                                {chat?.memory && message.index === chat.memoryThrough && (
+                                    <Container layout="flex" align="center" gap="xs" padding="none" width="100%" wrap={false}>
+                                        <Container padding="none" flexFill><Divider size="xs" /></Container>
+                                        <Button size="xxs" variant="ghost" color="secondary" genieTrigger="click" genie={{ trigger: 'click', width: '420px', padding: 'sm', content: <MemoryView text={chat.memory} /> }} title="The model is sent a memory of the messages above instead of the messages themselves">
+                                            <Icon name="FiArchive" size="xs" />Above: sent to the model as a memory
+                                        </Button>
+                                        <Container padding="none" flexFill><Divider size="xs" /></Container>
+                                    </Container>
+                                )}
+                                <Message
+                                    message={message}
+                                    isLast={index === shown.length - 1}
+                                    busy={busy}
+                                    onRegenerate={() => runTurn(chat, { regenerate: true }, null)}
+                                    onEdit={(messageIndex, content) => runTurn(chat, { content, editIndex: messageIndex }, content)}
+                                />
+                            </React.Fragment>
                         ))}
                         {live && (
                             <Container layout="flex-column" gap="xs" padding="none" width="100%">
@@ -2427,7 +2460,7 @@ const ChatPage = () => {
 
                     {context?.warn && !busy && chat.messages.length > 0 && (
                         <Container layout="flex" align="center" gap="sm" padding="none" role="status">
-                            <Typography size="sm" color="warning">This chat is nearly as long as the model can read ({context.percent}% used). Older messages will soon be forgotten.</Typography>
+                            <Typography size="sm" color="warning">This chat is nearly as long as the model can read ({context.percent}% used). Older messages are being folded into a memory; for a fresh start, begin a new chat from a summary.</Typography>
                             <Button size="xs" color="primary" disabled={Boolean(working)} onClick={summarise}>New chat from summary</Button>
                         </Container>
                     )}
@@ -2506,6 +2539,20 @@ const ChatPage = () => {
                             >
                                 <Icon name={searchOn && modelUsesTools ? 'FiGlobe' : 'FiSlash'} size="xs" />
                             </Button>
+                            {(chat?.notes || []).length > 0 && (
+                                <Pop
+                                    label={`Notes the model kept (${chat.notes.length})`}
+                                    icon="FiBookmark"
+                                    iconOnly
+                                    size="xs"
+                                    open={pop === 'notes'}
+                                    onOpen={() => openPop('notes')}
+                                    onClose={closePop}
+                                    width="360px"
+                                >
+                                    <NotesView notes={chat.notes} />
+                                </Pop>
+                            )}
                             <Input
                                 ref={fileInputRef}
                                 type="file"
