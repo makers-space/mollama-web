@@ -1381,8 +1381,6 @@ const ChatPage = () => {
     const [skills, setSkills] = useState([]);
     const [skillSources, setSkillSources] = useState([]);
     const [maxSkills, setMaxSkills] = useState(8);
-    const [skillSearch, setSkillSearch] = useState('');
-    const [skillSource, setSkillSource] = useState('all');
     const [tools, setTools] = useState([]);
     const [text, setText] = useState(() => {
         try {
@@ -1667,14 +1665,33 @@ const ChatPage = () => {
     // Only a model marked as able to use tools is offered them; one whose abilities are not known yet is given the benefit of the doubt.
     const modelAbilities = models.find((model) => model.name === currentModel)?.capabilities;
     const modelUsesTools = !modelAbilities?.length || modelAbilities.includes('tools');
-    // The skills shown: the ones turned on first, then the rest, narrowed by the search words and the project picked.
-    const shownSkills = useMemo(() => {
-        const words = skillSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        return skills
-            .filter((skill) => (skillSource === 'all' ? true : skillSource === 'on' ? activeSkills.includes(skill.id) : skillSource === 'suggested' ? skill.suggested : skill.source === skillSource))
-            .filter((skill) => words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)))
-            .sort((a, b) => Number(activeSkills.includes(b.id)) - Number(activeSkills.includes(a.id)));
-    }, [skills, skillSearch, skillSource, activeSkills.join(',')]);
+    // Every skill as a row of the Data component, in name order: its search, column filters, sorting and pages are the
+    // Data component's own, and a row's checkbox turns the skill on or off for this chat.
+    const skillRows = useMemo(() => skills.map((skill) => ({
+        id: skill.id,
+        skill: skill.name,
+        about: skill.description || '',
+        project: skillSources.find((source) => source.id === skill.source)?.name || skill.source,
+        works: skill.needs?.length > 0 ? 'Guidance only' : 'Works here',
+        tokens: skill.tokens,
+        length: skill.tokens > 4000 ? 'Long' : skill.tokens >= 1000 ? 'Medium' : 'Short',
+        on: activeSkills.includes(skill.id) ? 'On' : 'Off',
+        suggested: skill.suggested ? 'For small models' : 'Any'
+    })).sort((a, b) => a.skill.localeCompare(b.skill, undefined, { sensitivity: 'base' })), [skills, skillSources, activeSkills.join(',')]);
+    const skillFields = useMemo(() => ({
+        skill: { label: 'Skill', component: Typography, props: { weight: 'semibold' } },
+        about: { label: 'About', component: Typography, props: { color: 'muted' }, truncate: true, maxLength: 34 },
+        project: { label: 'Project', component: Typography, props: { color: 'muted' } },
+        works: { label: 'Works', component: Badge, transform: (value) => ({ children: value, color: value === 'Guidance only' ? 'warning' : 'success', title: value === 'Guidance only' ? 'Its guidance works here. Some of its steps need commands or files that Mollama does not have yet.' : 'Everything it asks for is available.' }) },
+        tokens: { label: 'Tokens', component: Typography, transform: (value) => ({ children: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value), color: value > 4000 ? 'warning' : 'muted', title: value > 4000 ? 'A long skill. A small model may not have room for it and its conversation, and may ignore it.' : undefined }) }
+    }), []);
+    const chooseSkills = (chosen, ids) => {
+        if (ids.length > maxSkills) {
+            notifyError(`A chat holds at most ${maxSkills} skills. Turn one off to add another.`);
+            return;
+        }
+        switchSetup({ skills: ids });
+    };
     const toggleSkill = (id) => switchSetup({ skills: activeSkills.includes(id) ? activeSkills.filter((other) => other !== id) : [...activeSkills, id] });
     const savedNote = chat ? 'Saved to this chat as you switch.' : 'Used for this chat from your first message.';
 
@@ -2558,7 +2575,7 @@ const ChatPage = () => {
                 open={pop === 'setup'}
                 onOpen={() => openPop('setup')}
                 onClose={closePop}
-                width="480px"
+                width={view === 'skills' ? '860px' : '480px'}
                 tall
             >
                 {view === 'files' && <FileBrowser mode="read" onPick={articleFromFile} onBack={() => setView('main')} />}
@@ -2592,36 +2609,21 @@ const ChatPage = () => {
                             <Button size="xxs" variant="ghost" onClick={() => setView('main')}><Icon name="FiChevronLeft" size="xs" />Skills</Button>
                             <Button size="xxs" variant="ghost" disabled={!draftSetup.skills} onClick={() => switchSetup({ skills: null })}>Use defaults</Button>
                         </Container>
-                        <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
-                            <Input type="search" size="xs" width="100%" placeholder={`Search ${skills.length} skills`} value={skillSearch} onChange={(event) => setSkillSearch(event.target.value)} aria-label="Search skills" />
-                            <Select
-                                size="xs"
-                                width="190px"
-                                value={skillSource}
-                                options={[{ value: 'all', label: 'All projects' }, { value: 'on', label: `Turned on (${activeSkills.length})` }, { value: 'suggested', label: 'Suggested for small models' }, ...skillSources.map((source) => ({ value: source.id, label: `${source.name} (${source.count})` }))]}
-                                onChange={(chosen) => setSkillSource(String(chosen?.target?.value ?? chosen))}
-                                aria-label="Show skills from"
-                            />
-                        </Container>
                         {activeSkills.length >= maxSkills
                             ? <Typography size="xxs" color="warning">{`${activeSkills.length} of ${maxSkills} skills are on, which is the most a chat holds, so the other switches are off. Turn one off to add another.`}</Typography>
                             : <Typography size="xxs" color="muted">{`${activeSkills.length} of ${maxSkills} on. ${savedNote} A skill is instructions, not a tool: the model reads it with every message, so turn on only what this chat needs.`}</Typography>}
-                        {shownSkills.length === 0 && <Typography size="xs" color="muted">No skill matches.</Typography>}
-                        {shownSkills.slice(0, 40).map((skill) => (
-                        <Container key={skill.id} layout="flex" wrap={false} align="center" justify="between" gap="xs" padding="none" width="100%" title={`${skill.description}${skill.credit ? `\n\nFrom ${skill.credit}` : ''}`}>
-                            <Container layout="flex-column" gap="none" padding="none" flexFill minWidth="0">
-                                <Container layout="flex" wrap={false} align="center" gap="xs" padding="none" width="100%">
-                                    <Typography size="xs" truncate>{skill.name}</Typography>
-                                    {skill.needs?.length > 0 && <Badge size="xxs" color="warning" title="Its guidance works here. Some of its steps need commands or files that Mollama does not have yet.">Guidance only</Badge>}
-                                    {skill.tokens > 4000 && <Badge size="xxs" color="warning" title="A long skill. A small model may not have room for it and its conversation, and may ignore it.">Large</Badge>}
-                                    <Typography size="xxs" color="muted">{`${skill.tokens >= 1000 ? `${(skill.tokens / 1000).toFixed(1)}k` : skill.tokens} tokens`}</Typography>
-                                </Container>
-                                <Typography size="xxs" color="muted" truncate>{skill.description}</Typography>
-                            </Container>
-                            <Switch size="xs" checked={activeSkills.includes(skill.id)} disabled={!activeSkills.includes(skill.id) && activeSkills.length >= maxSkills} onChange={() => toggleSkill(skill.id)} aria-label={skill.name} />
-                        </Container>
-                        ))}
-                        {shownSkills.length > 40 && <Typography size="xxs" color="muted">{`Showing 40 of ${shownSkills.length}. Search or pick a project to narrow the list.`}</Typography>}
+                        <Data
+                            size="xs"
+                            width="100%"
+                            variant="table"
+                            data={skillRows}
+                            fieldConfig={skillFields}
+                            exclude={['id', 'length', 'on', 'suggested']}
+                            pageSize={10}
+                            selector
+                            selectedItems={activeSkills}
+                            onSelectionChange={chooseSkills}
+                        />
                     </Container>
                 )}
                 {view === 'main' && (
