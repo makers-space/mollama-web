@@ -24,6 +24,12 @@ const PURPOSES = [
 const FIT_COLORS = { gpu: 'success', mixed: 'warning', cpu: 'warning', too_large: 'error', cloud: 'tertiary' };
 const RESUMABLE = ['DOWNLOAD_INTERRUPTED', 'OLLAMA_DOWN', 'DISK_FULL'];
 const ABILITY_LABELS = { tools: 'Can use tools', vision: 'Can read images', thinking: 'Thinks step by step' };
+// One line each, shown when a badge is pointed at.
+const ABILITY_NOTES = {
+    'Can use tools': 'It can call tools while it answers: search the web, read your files, use a calculator or an app you connected on the Tools page.',
+    'Can read images': 'It can look at pictures you attach and answer about them.',
+    'Thinks step by step': 'It works a problem through before it answers, which takes longer and is often more accurate.'
+};
 
 const CREATIVITY = [
     { label: 'Precise', value: 0.2 },
@@ -361,7 +367,7 @@ const CatalogueCard = ({ model, job, canManage, ollamaUp, onDownload }) => {
             <Container layout="flex" gap="xs" padding="none" align="center">
                 <Badge size="xs" color={FIT_COLORS[model.fit.verdict]}>{model.fit.label}</Badge>
                 {cannotChat(model) && <NoChatBadge />}
-                {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary">{ability}</Badge>)}
+                {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary" title={ABILITY_NOTES[ability]}>{ability}</Badge>)}
             </Container>
             <Container padding="none" flexFill />
             <Row>
@@ -642,7 +648,7 @@ const InstalledTab = ({ installed, canManage, onDelete, elsewhere = {} }) => {
                     <Container layout="flex" gap="xs" padding="none" align="center">
                         {model.personal && <Badge size="xs" color="primary">Yours, on {model.basedOn}</Badge>}
                         {cannotChat(model) && <NoChatBadge />}
-                        {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary">{ability}</Badge>)}
+                        {abilities(model).map((ability) => <Badge key={ability} size="xs" color="secondary" title={ABILITY_NOTES[ability]}>{ability}</Badge>)}
                         {elsewhere[model.name]?.length > 0 && <Badge size="xs" color="tertiary">Also on {elsewhere[model.name].join(', ')}</Badge>}
                     </Container>
                     <Typography size="xxs" color="muted">

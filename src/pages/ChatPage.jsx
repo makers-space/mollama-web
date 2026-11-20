@@ -1182,6 +1182,8 @@ const stepText = (step, active = false) => {
     if (step.tool === 'Drawing check') return active ? 'Correcting what it drew…' : 'Corrected what it drew';
     if (step.tool === 'Question') return active ? 'Asking you a question…' : 'Asked you a question';
     if (step.tool === 'Skill file') return active ? `Reading ${step.input}…` : `Read ${step.input}`;
+    if (step.tool === 'List files') return step.failed ? `Could not look in ${step.input}` : active ? `Looking in ${step.input}…` : `Looked in ${step.input}`;
+    if (step.tool === 'Read a file') return step.failed ? `Could not read ${step.input}` : active ? `Reading ${step.input}…` : `Read ${step.input}`;
     if (step.tool === 'Skill library') return active ? `Looking in the skill library for “${step.input}”…` : `Looked in the skill library for “${step.input}”`;
     if (!isSearchStep(step)) {
         if (step.failed) return `Could not use ${step.tool}: ${TOOL_FAILURES[step.failed] || TOOL_FAILURES.unreachable}`;
@@ -1193,13 +1195,32 @@ const stepText = (step, active = false) => {
     return step.tool === 'web_fetch' ? `Read ${hostOf(step.input)}` : `Searched the web for “${step.input}”`;
 };
 
+// A tool step opens to show what was sent and, once it is back, what came back.
+const ToolStep = ({ step, text }) => {
+    const [open, setOpen] = useState(false);
+    const color = step.failed ? 'error' : 'muted';
+    return (
+        <Container layout="flex-column" gap="none" padding="none" width="100%">
+            <Button size="xxs" variant="ghost" color={step.failed ? 'error' : 'secondary'} onClick={() => setOpen((now) => !now)} title={open ? 'Hide what was sent and what came back' : 'Show what was sent and what came back'}>
+                {text}<Icon name={open ? 'FiChevronUp' : 'FiChevronDown'} size="xs" />
+            </Button>
+            {open && (
+                <Container layout="flex-column" gap="none" padding="none" width="100%">
+                    <Typography size="xxs" color={color}>Sent: {step.input || 'nothing'}</Typography>
+                    <Typography size="xxs" color={color}>Came back: {step.answer ?? 'not yet'}</Typography>
+                </Container>
+            )}
+        </Container>
+    );
+};
+
 const Steps = ({ steps, live = false }) => (
     <Container layout="flex-column" gap="none" padding="none" marginBottom="xs">
         {steps.map((step, index) => (
             <Container key={index} layout="flex" wrap={false} align="center" gap="xs" padding="none">
                 <Icon name={step.failed ? 'FiAlertTriangle' : step.tool === 'Skill' || step.tool === 'Skill library' || step.tool === 'Skill file' ? 'FiZap' : !isSearchStep(step) ? 'FiTool' : step.tool === 'web_fetch' ? 'FiFileText' : 'FiSearch'} size="xs" color={step.failed ? 'error' : 'secondary'} />
                 {!isSearchStep(step)
-                    ? <Typography size="xxs" color={step.failed ? 'error' : 'muted'} truncate title={`What was sent: ${step.input}`}>{stepText(step, live && index === steps.length - 1)}</Typography>
+                    ? <ToolStep step={step} text={stepText(step, live && index === steps.length - 1)} />
                     : step.failed
                     ? <Typography size="xxs" color="error">{stepText(step, live && index === steps.length - 1)}</Typography>
                     : step.tool === 'web_fetch'
@@ -1912,6 +1933,7 @@ const ChatPage = () => {
         if (event.type === 'permission') setLive((now) => now && { ...now, permission: { id: event.id, tool: event.tool, input: event.input } });
         if (event.type === 'toolFailed' || event.type === 'token') setLive((now) => (now?.permission ? { ...now, permission: null } : now));
         if (event.type === 'toolFailed') setLive((now) => now && { ...now, steps: (now.steps || []).map((step, index, all) => (index === all.length - 1 ? { ...step, failed: event.failed } : step)) });
+        if (event.type === 'toolAnswer') setLive((now) => now && { ...now, steps: (now.steps || []).map((step, index, all) => (index === all.length - 1 ? { ...step, answer: event.answer } : step)) });
     };
 
     // Replies travel on the live connection, each piece numbered, so every app this person has open follows the same
