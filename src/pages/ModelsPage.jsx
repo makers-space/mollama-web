@@ -1153,7 +1153,7 @@ const ModelsPage = () => {
             : [job, ...current]));
     };
 
-    const download = async (name) => applyJob(await act(() => modelService.startDownload(name), 'The download could not be started.'));
+    const download = async (name, onComputer = deviceId) => applyJob(await act(() => modelService.startDownload(name, onComputer), 'The download could not be started.'));
     const pause = async (job) => applyJob(await act(() => modelService.pauseDownload(job.id), 'The download could not be paused.'));
     const cancel = async (job) => {
         if (job.status === 'failed') {
@@ -1165,15 +1165,16 @@ const ModelsPage = () => {
     };
 
     const deleteModel = async (model) => {
+        const target = device;
         const dependants = model.usedBy?.length
             ? ` These personal models are built on it and will stop working: ${model.usedBy.join(', ')}.`
             : '';
         const agreed = await confirm(
-            `Delete ${model.displayName} from ${device?.name || 'this device'}? You can download it again later.${elsewhere[model.name]?.length ? ` It stays on ${elsewhere[model.name].join(', ')}.` : ''}${dependants}`,
+            `Delete ${model.displayName} from ${target?.name || 'this device'}? You can download it again later.${elsewhere[model.name]?.length ? ` It stays on ${elsewhere[model.name].join(', ')}.` : ''}${dependants}`,
             { confirmLabel: 'Delete', color: 'error' }
         );
         if (!agreed) return;
-        const result = await act(() => modelService.deleteModel(model.name), 'The model could not be deleted.');
+        const result = await act(() => modelService.deleteModel(model.name, target?.id), 'The model could not be deleted.');
         if (result) {
             success(`${model.displayName} was deleted.`);
             refresh();
@@ -1232,7 +1233,7 @@ const ModelsPage = () => {
                     />
                 </Container>
 
-                <DownloadsPanel jobs={jobs} canManage={canManage} onResume={(job) => download(job.model)} onPause={pause} onCancel={cancel} />
+                <DownloadsPanel jobs={jobs} canManage={canManage} onResume={(job) => download(job.model, job.device || deviceId)} onPause={pause} onCancel={cancel} />
 
                 <Container layout="flex" gap="xs" padding="none" align="center">
                     {TABS.map((option) => (

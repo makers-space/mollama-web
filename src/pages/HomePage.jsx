@@ -275,10 +275,13 @@ const Calculator = ({ user }) => {
 
     const loadMine = useCallback(async () => {
         try {
-            const [devices, installed] = await Promise.all([deviceService.listDevices(), modelService.listInstalled()]);
-            const hardware = devices.devices[0]?.hardware;
+            const devices = await deviceService.listDevices();
+            const first = devices.devices[0];
+            const installed = await modelService.installedOn(first?.id);
+            const hardware = first?.hardware;
             setMine({
-                device: devices.devices[0]?.name,
+                device: first?.name,
+                deviceId: first?.id,
                 installed: new Set(installed.models.map((model) => model.name)),
                 canManage: Boolean(installed.permissions?.manage)
             });
@@ -313,7 +316,7 @@ const Calculator = ({ user }) => {
 
     const download = async (tag) => {
         try {
-            await modelService.startDownload(tag);
+            await modelService.startDownload(tag, mine?.deviceId);
             activity.refresh();
         } catch (error) {
             notifyError(describeError(error, 'The download could not be started.'));

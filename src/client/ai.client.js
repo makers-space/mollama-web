@@ -440,7 +440,8 @@ export const modelService = {
 
     listInstalled: () => api.get('/models', onViewed()),
     listRunning: () => api.get('/models/running', onViewed()),
-    deleteModel: (name) => api.post('/models/delete', { name }, onViewed()),
+    // A removal or download names the computer the person confirmed; the server refuses one that names none.
+    deleteModel: (name, deviceId) => api.post('/models/delete', { name }, onDevice(deviceId)),
     unloadModel: (name) => api.post('/models/unload', { name }, onViewed()),
     loadModel: (name) => api.post('/models/load', name ? { name } : {}, onDevice(chatDevice)),
     createModel: (request) => api.post('/models/create', request, onViewed()),
@@ -451,7 +452,7 @@ export const modelService = {
     getPublicCatalogue: (memoryMb, gpuMemoryMb, shared = false) => api.get('/catalogue', { params: { memoryMb, gpuMemoryMb, sample: true, ...(shared ? { shared: true } : {}) } })
         .catch((error) => (error?.response?.status === 400 ? api.get('/catalogue', { params: { memoryMb, gpuMemoryMb } }) : Promise.reject(error))),
 
-    startDownload: (name) => api.post('/models/pull', { name }, onViewed()),
+    startDownload: (name, deviceId) => api.post('/models/pull', { name }, onDevice(deviceId)),
     listDownloads: () => api.get('/models/downloads', onViewed()),
     pauseDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'pause' }, onViewed()),
     cancelDownload: (id) => api.post('/models/downloads/cancel', { id, action: 'cancel' }, onViewed()),
