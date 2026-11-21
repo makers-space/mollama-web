@@ -9,6 +9,101 @@ const ADD_STEPS = [
     'The computer appears on this page by itself, and its models can be used from any of your Mollama apps.'
 ];
 
+// Pooling: what a person should know before lending computers to one model.
+const POOL_GUIDE = {
+    steps: {
+        label: 'How to pool',
+        items: [
+            'Install the Mollama desktop app on every computer you want to pool, and sign in with this account on each.',
+            'Put them on the same home network, by cable if you can, or connect two of them with a direct network cable.',
+            'Mollama finds the computers that can pool by itself and lists them here.',
+            'On each computer that lends, turn on lending. The desktop app downloads the llama.cpp build for that computer, after you agree.',
+            'Pick the main computer: the one with the largest graphics card, and room on its disk for the model.',
+            'Download the model on the main computer only, then choose the pool in a chat.'
+        ]
+    },
+    benefits: {
+        label: 'Benefits',
+        items: [
+            'Runs models no single computer of yours can hold, using the memory of all of them.',
+            'Puts memory to work that sits idle on your other computers.',
+            'The model lives on one computer: helpers need no copy and no Ollama.',
+            'Measured on two of the owner\'s computers over Wi-Fi: a 33B model wrote about 2.8 times faster pooled than on one computer alone.'
+        ]
+    },
+    risks: {
+        label: 'Risks',
+        items: [
+            'Pooling has no password and no encryption between computers. Only pool on a home network you trust, never on public or shared Wi-Fi.',
+            'Replies are slower than on one computer whenever the model would fit on one: on that same test a small model wrote 11 words a second pooled against 52 alone.',
+            'If a computer in the pool sleeps, loses its network or is turned off, the reply stops.',
+            'A lending computer is busy and warm while a pooled model runs.'
+        ]
+    },
+    tips: {
+        label: 'Tips',
+        items: [
+            'Use a cable, not Wi-Fi: every word crosses the network, and Wi-Fi delay comes and goes.',
+            'Pool only models that do not fit one computer. A model that fits runs fastest on its own.',
+            'Keep lending computers awake and plugged in, and close large programs on them.',
+            'Pool two or three computers, not more: each one adds a step to every word.',
+            'The first start sends the model to the helpers and takes minutes; later starts use their cache and take about a minute.',
+            'Turn lending off when you are done.'
+        ]
+    }
+};
+
+const PoolingCard = ({ pools }) => {
+    const [tab, setTab] = useState('steps');
+    const groups = pools?.groups || [];
+    const left = pools?.left || [];
+    return (
+        <Card layout="flex-column" gap="sm" padding="md" width="100%" minWidth="0" span="full" hover={false}>
+            <Heading icon="FiLayers" title="Pooling computers">
+                <Badge size="xs" color="secondary">Coming soon</Badge>
+            </Heading>
+            <Typography size="xs" color="muted">
+                Several of your computers can share one model that none of them could hold alone. Mollama checks which of your computers are on the same network; lending a computer and running a pooled model are being built.
+            </Typography>
+            {!pools && <Typography size="xs" color="muted">Checking your computers…</Typography>}
+            {pools && groups.length === 0 && <Typography size="xs">None of your computers can pool right now.</Typography>}
+            {groups.map((group) => (
+                <Container key={group.network} layout="flex-column" gap="xs" padding="sm" width="100%" backgroundColor="surface-alt">
+                    <Container layout="flex" align="center" gap="xs" padding="none" width="100%">
+                        <Icon name={group.via === 'cable' || group.wired ? 'FiLink' : 'FiWifi'} size="xs" color="primary" />
+                        <Typography size="xs" weight="semibold">{group.computers.map((one) => one.name).join(' + ')}</Typography>
+                        <Badge size="xs" color="secondary">{group.via === 'cable' ? 'Direct cable' : group.wired ? 'Home network, cable' : 'Home network, Wi-Fi'}</Badge>
+                        <Badge size="xs" color="warning" title="The main computer has not yet reached the others; that check comes with lending.">Not yet checked</Badge>
+                    </Container>
+                    <Typography size="xxs" color="muted">
+                        Between them: {formatGb(group.combined.gpuMemoryMb)} of graphics memory and {formatGb(group.combined.memoryMb)} of system memory, on {group.network}.
+                    </Typography>
+                </Container>
+            ))}
+            {left.length > 0 && (
+                <Container layout="flex-column" gap="none" padding="none" width="100%">
+                    {left.map((one) => (
+                        <Typography key={one.id} size="xxs" color="muted">{`${one.name}: ${one.message}`}</Typography>
+                    ))}
+                </Container>
+            )}
+            <ButtonGroup size="xs" justify="start" selectable={false}>
+                {Object.entries(POOL_GUIDE).map(([key, part]) => (
+                    <Button key={key} size="xs" color={tab === key ? 'primary' : 'secondary'} selected={tab === key} onClick={() => setTab(key)}>{part.label}</Button>
+                ))}
+            </ButtonGroup>
+            <Container layout="flex-column" gap="xs" padding="none" width="100%">
+                {POOL_GUIDE[tab].items.map((item, index) => (
+                    <Container key={item} layout="flex" align="start" gap="xs" padding="none" wrap={false}>
+                        {tab === 'steps' ? <Badge size="xs" color="primary">{index + 1}</Badge> : <Icon name={tab === 'risks' ? 'FiAlertTriangle' : tab === 'benefits' ? 'FiCheck' : 'FiInfo'} size="xs" color={tab === 'risks' ? 'warning' : 'secondary'} />}
+                        <Typography size="xs" color="muted">{item}</Typography>
+                    </Container>
+                ))}
+            </Container>
+        </Card>
+    );
+};
+
 const Tile = ({ icon, label, value, note }) => (
     <Card layout="flex" align="center" gap="sm" padding="sm" hover={false} shadow={false} wrap={false} width="100%" minWidth="0">
         <Icon name={icon} size="sm" color="primary" />
@@ -286,11 +381,13 @@ const DevicesPage = () => {
     const [here, setHere] = useState(null);
     const [canManage, setCanManage] = useState(false);
     const [failed, setFailed] = useState(false);
+    const [pools, setPools] = useState(null);
 
     const load = useCallback(async () => {
         try {
             const result = await deviceService.listDevices();
             setDevices(result.devices);
+            deviceService.pools().then(setPools, () => setPools({ groups: [], left: [] }));
             setCanManage(Boolean(result.permissions?.manage));
             setFailed(false);
         } catch (error) {
@@ -384,6 +481,7 @@ const DevicesPage = () => {
                 )}
 
                 <Container layout="grid" columns={2} gap="sm" padding="none" width="100%">
+                    {devices?.length > 0 && <PoolingCard pools={pools} />}
                     {devices?.map((device) => (
                         <DeviceCard key={device.id} device={device} canManage={canManage} onChanged={replaceDevice} onRemove={removeDevice} onPause={pauseDevice} here={device.id === here} onSetUp={setUpOllama} />
                     ))}

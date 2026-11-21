@@ -256,6 +256,7 @@ export const toolService = {
 
 export const deviceService = {
     listDevices: () => api.get('/devices'),
+    pools: () => api.get('/devices/pools'),
     // The computers plus the online services a person has connected, for choosing where a chat's model runs.
     listPickable: () => api.get('/devices?with=online'),
     linkDevice: (details) => api.post('/devices/link', details),
